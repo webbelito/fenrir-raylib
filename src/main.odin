@@ -14,7 +14,7 @@ main :: proc() {
         window_width = 1280,
         window_height = 720,
         target_fps = 60,
-        vsync = true,
+        vsync = false,
         fullscreen = false,
         disable_escape_quit = true,
     }

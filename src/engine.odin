@@ -72,7 +72,6 @@ engine_update :: proc() -> bool {
 
 // Render the current frame
 engine_render :: proc() {
-    log_debug(.RENDERER, "Begin drawing frame")
     raylib.BeginDrawing()
     defer raylib.EndDrawing()
     
@@ -102,8 +101,6 @@ engine_run :: proc() {
             log_info(.ENGINE, "Escape key pressed, quitting")
             engine_is_running = false
         }
-
-        log_info(.ENGINE, "Engine is running")
 
         if !engine_update() {
             break
