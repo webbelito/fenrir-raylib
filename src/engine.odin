@@ -51,6 +51,11 @@ engine_init :: proc(config: Engine_Config) -> bool {
         raylib.SetExitKey(raylib.KeyboardKey.F4)
     }
     
+    // Initialize editor in debug builds
+    when ODIN_DEBUG {
+        editor_init()
+    }
+    
     engine_is_running = true
     log_info(.ENGINE, "Fenrir Engine initialized successfully")
     
@@ -67,6 +72,16 @@ engine_update :: proc() -> bool {
     // Update time
     time_update()
     
+    // Update editor in debug mode
+    when ODIN_DEBUG {
+        // Toggle editor with F1 key
+        if raylib.IsKeyPressed(.F1) {
+            editor_toggle()
+        }
+        
+        editor_update()
+    }
+    
     return engine_is_running
 }
 
@@ -77,8 +92,13 @@ engine_render :: proc() {
     
     raylib.ClearBackground(raylib.BLACK)
 
-    // Draw FPS in debug mode
+    // Draw 3D scene here (viewport will be adjusted if editor is active)
+    
+    // Draw editor UI in debug mode
     when ODIN_DEBUG {
+        editor_render()
+        
+        // Draw FPS counter
         raylib.DrawFPS(10, 10)
     }
 }
@@ -86,6 +106,11 @@ engine_render :: proc() {
 // Shutdown the engine
 engine_shutdown :: proc() {
     log_info(.ENGINE, "Shutting down Fenrir Engine")
+    
+    // Shutdown editor in debug mode
+    when ODIN_DEBUG {
+        editor_shutdown()
+    }
     
     // Shutdown Raylib using our wrapper
     raylib.CloseWindow()
