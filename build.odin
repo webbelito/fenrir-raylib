@@ -77,6 +77,7 @@ build_debug :: proc() -> (success: bool) {
 	os.make_directory_all(filepath.join({project_root, "assets/shaders/bin/game"}))
 	os.make_directory_all(filepath.join({project_root, "assets/shaders/bin/editor"}))
 	os.make_directory_all(filepath.join({project_root, "assets/textures"}))
+	os.make_directory_all(filepath.join({project_root, "assets/fonts"}))
 	os.make_directory_all(filepath.join({project_root, "bin/release"}))
 	
 	// Build in debug mode
@@ -199,6 +200,7 @@ build_release :: proc() -> (success: bool) {
 	os.make_directory_all(filepath.join({project_root, "assets/shaders/bin/game"}))
 	// No editor shader output needed for release
 	os.make_directory_all(filepath.join({project_root, "assets/textures"}))
+	os.make_directory_all(filepath.join({project_root, "assets/fonts"}))
 	os.make_directory_all(filepath.join({project_root, "src/game"}))
 	os.make_directory_all(filepath.join({project_root, "src/editor"}))  // Still needed for compilation
 	os.make_directory_all(filepath.join({project_root, "bin/release"}))
@@ -323,6 +325,7 @@ build_release :: proc() -> (success: bool) {
 		os.make_directory_all(filepath.join({dest_assets_dir, "scenes"}))
 		os.make_directory_all(filepath.join({dest_assets_dir, "shaders/bin/game"}))
 		os.make_directory_all(filepath.join({dest_assets_dir, "textures"}))
+		os.make_directory_all(filepath.join({dest_assets_dir, "fonts"}))
 		
 		// Copy meshes directory
 		meshes_src := filepath.join({assets_dir, "meshes"})
@@ -343,6 +346,11 @@ build_release :: proc() -> (success: bool) {
 		textures_src := filepath.join({assets_dir, "textures"})
 		textures_dst := filepath.join({dest_assets_dir, "textures"})
 		copy_directory(textures_src, textures_dst)
+		
+		// Copy fonts directory
+		fonts_src := filepath.join({assets_dir, "fonts"})
+		fonts_dst := filepath.join({dest_assets_dir, "fonts"})
+		copy_directory(fonts_src, fonts_dst)
 		
 		logging.log_build_info("Assets copied successfully")
 	} else {
