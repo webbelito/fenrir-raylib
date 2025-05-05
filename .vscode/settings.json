@@ -1,0 +1,9 @@
+{
+    "odin.langServerPath": "ols",
+    "odin.odinExecutablePath": "odin",
+    "odin.formattingStyle": "minimal",
+    "[odin]": {
+        "editor.formatOnSave": true,
+        "editor.semanticHighlighting.enabled": true
+    }
+} 
