@@ -1,29 +1,52 @@
 package main
 
-import "core:fmt"
 import "core:log"
+import "core:os"
+import "core:strings"
+import raylib "vendor:raylib"
 
 main :: proc() {
-    // Initialize logging first
-    log_init()
-    defer log_shutdown()
-    
-    // Create engine configuration
-    config := Engine_Config{
-        app_name = "Fenrir Engine Demo",
-        window_width = 1280,
-        window_height = 720,
-        target_fps = 60,
-        vsync = false,
-        fullscreen = false,
-        disable_escape_quit = true,
-    }
-    
-    // Initialize and run engine
-    if engine_init(config) {
-        engine_run()
-    } else {
-        log_error(.ENGINE, "Failed to initialize Fenrir Engine")
-    }
-    defer engine_shutdown()
-} 
+	// Initialize logging
+	log_init()
+	defer log_shutdown()
+
+	// Initialize engine
+	engine_init()
+	defer engine_shutdown()
+
+	// Initialize scene system
+	scene_init()
+	defer scene_shutdown()
+
+	// Initialize editor (only in debug mode)
+	when ODIN_DEBUG {
+		editor_init()
+	}
+
+	// Create a new scene
+	scene_new("Main Scene")
+
+	// Main loop
+	for engine_should_run() {
+		engine_update()
+
+		// Update editor (only in debug mode)
+		when ODIN_DEBUG {
+			editor_update()
+		}
+
+		// Begin drawing
+		raylib.BeginDrawing()
+
+		// Render engine
+		engine_render()
+
+		// Render editor (only in debug mode)
+		when ODIN_DEBUG {
+			editor_render()
+		}
+
+		// End drawing
+		raylib.EndDrawing()
+	}
+}

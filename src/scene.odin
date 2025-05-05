@@ -390,8 +390,8 @@ create_ambulance_entity :: proc() -> Entity {
 	}
 
 	// Set model texture and material properties
-	for i in 0 ..< model.model.materialCount {
-		material := &model.model.materials[i]
+	for i in 0 ..< model.materialCount {
+		material := &model.materials[i]
 
 		// Set texture and material properties
 		material.maps[0].texture = texture

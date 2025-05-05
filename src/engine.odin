@@ -4,7 +4,11 @@ package main
 
 import "base:runtime"
 
+import "core:fmt"
 import "core:log"
+import "core:mem"
+import "core:os"
+import "core:path/filepath"
 import "core:strings"
 import raylib "vendor:raylib"
 
@@ -21,9 +25,16 @@ Engine_Config :: struct {
 	default_context:     runtime.Context,
 }
 
-// Global engine running state
-engine_is_running: bool = false
-engine_is_playing: bool = false
+// Engine state
+Engine_State :: struct {
+	initialized: bool,
+	running:     bool,
+	camera:      raylib.Camera3D,
+	time:        Time_State,
+}
+
+// Global engine state
+engine: Engine_State
 
 // Mesh structure
 Mesh :: struct {
@@ -131,336 +142,196 @@ setup_model_materials :: proc(model: ^Model, config: ^Model_Config) {
 }
 
 // Initialize the engine
-engine_init :: proc(config: Engine_Config) -> bool {
-	log_info(.ENGINE, "Initializing Fenrir Engine")
-
-	// Initialize subsystems
-	time_init()
-	ecs_init()
-	scene_init()
-
-	// Initialize Raylib window
-	raylib.InitWindow(
-		config.window_width,
-		config.window_height,
-		strings.clone_to_cstring(config.app_name),
-	)
-
-	if config.vsync {
-		// Set target FPS using our wrapper
-		raylib.SetTargetFPS(config.target_fps)
+engine_init :: proc() {
+	if engine.initialized {
+		log_warning(.ENGINE, "Engine already initialized")
+		return
 	}
 
-	if config.fullscreen {
-		log_info(.ENGINE, "Toggling fullscreen mode")
-		raylib.ToggleFullscreen()
-	}
-
-	if config.disable_escape_quit {
-		log_info(.ENGINE, "Disabling escape key to quit")
-		raylib.SetExitKey(raylib.KeyboardKey.F4)
-	}
-
-	// Initialize editor in debug builds
-	when ODIN_DEBUG {
-		editor_init()
-	}
-
-	// Create a default scene if none exists
-	if !scene_is_loaded() {
-		scene_new("Default Scene")
-	}
+	log_info(.ENGINE, "Initializing engine")
 
 	// Initialize asset manager
 	asset_manager_init()
 
-	engine_is_running = true
-	log_info(.ENGINE, "Fenrir Engine initialized successfully")
+	// Initialize window
+	raylib.InitWindow(1280, 720, "Fenrir Engine")
+	raylib.SetTargetFPS(60)
 
-	return true
-}
-
-// Start play mode (run the actual game)
-engine_play :: proc() {
-	if !engine_is_playing {
-		log_info(.ENGINE, "Starting play mode")
-		engine_is_playing = true
-
-		// TODO: Additional play mode setup
+	// Initialize camera
+	engine.camera = raylib.Camera3D {
+		position   = {0, 5, -10},
+		target     = {0, 0, 0},
+		up         = {0, 1, 0},
+		fovy       = 45,
+		projection = .PERSPECTIVE,
 	}
+
+	// Initialize time
+	time_init()
+
+	engine.initialized = true
+	engine.running = true
+
+	log_info(.ENGINE, "Engine initialized successfully")
 }
 
-// Stop play mode (return to edit mode)
-engine_stop :: proc() {
-	if engine_is_playing {
-		log_info(.ENGINE, "Stopping play mode")
-		engine_is_playing = false
-
-		// TODO: Additional play mode cleanup
+// Shutdown the engine
+engine_shutdown :: proc() {
+	if !engine.initialized {
+		log_warning(.ENGINE, "Engine not initialized")
+		return
 	}
+
+	log_info(.ENGINE, "Shutting down engine")
+
+	// Shutdown asset manager
+	asset_manager_shutdown()
+
+	// Close window
+	raylib.CloseWindow()
+
+	engine.initialized = false
+	engine.running = false
+
+	log_info(.ENGINE, "Engine shut down successfully")
 }
 
-// Update the engine (one frame)
-engine_update :: proc() -> bool {
-	if raylib.WindowShouldClose() {
-		log_debug(.ENGINE, "Window close requested")
-		engine_is_running = false
+// Update the engine
+engine_update :: proc() {
+	if !engine.initialized || !engine.running {
+		return
 	}
 
 	// Update time
 	time_update()
 
-	// Update editor in debug mode
-	when ODIN_DEBUG {
-		// Toggle editor with F1 key
-		if raylib.IsKeyPressed(.F1) {
-			editor_toggle()
-		}
-
-		// Toggle play mode with F5 key
-		if raylib.IsKeyPressed(.F5) {
-			if engine_is_playing {
-				engine_stop()
-			} else {
-				engine_play()
-			}
-		}
-
-		editor_update()
+	// Update camera
+	if raylib.IsKeyDown(.W) {
+		engine.camera.position.z += 0.1
 	}
-
-	// TODO: Update game systems (physics, AI, etc.)
-
-	return engine_is_running
+	if raylib.IsKeyDown(.S) {
+		engine.camera.position.z -= 0.1
+	}
+	if raylib.IsKeyDown(.A) {
+		engine.camera.position.x -= 0.1
+	}
+	if raylib.IsKeyDown(.D) {
+		engine.camera.position.x += 0.1
+	}
+	if raylib.IsKeyDown(.SPACE) {
+		engine.camera.position.y += 0.1
+	}
+	if raylib.IsKeyDown(.LEFT_CONTROL) {
+		engine.camera.position.y -= 0.1
+	}
 }
 
-// Render the engine (one frame)
-engine_render :: proc() -> bool {
-	// Clear the screen
+// Render the engine
+engine_render :: proc() {
+	if !engine.initialized || !engine.running {
+		return
+	}
+
 	raylib.ClearBackground(raylib.BLACK)
 
-	// Begin drawing
-	raylib.BeginDrawing()
-
 	// Get the main camera
-	camera_entity := scene_get_main_camera()
-	if camera_entity != 0 {
-		camera := ecs_get_camera(camera_entity)
-		transform := ecs_get_transform(camera_entity)
+	main_camera := scene_get_main_camera()
+	if main_camera == 0 {
+		log_warning(.ENGINE, "No main camera found")
+		return
+	}
 
-		if camera != nil && transform != nil {
-			// Set up camera
-			camera_pos := raylib.Vector3 {
-				transform.position[0],
-				transform.position[1],
-				transform.position[2],
-			}
-			camera_target := raylib.Vector3 {
-				transform.position[0],
-				transform.position[1],
-				transform.position[2] + 1.0, // Look forward
-			}
-			camera_up := raylib.Vector3{0, 1, 0}
+	// Get camera component
+	camera := ecs_get_camera(main_camera)
+	if camera == nil {
+		log_warning(.ENGINE, "Main camera has no camera component")
+		return
+	}
 
-			// Begin 3D mode
-			raylib.BeginMode3D(
-				raylib.Camera3D {
-					position = camera_pos,
-					target = camera_target,
-					up = camera_up,
-					fovy = camera.fov,
-					projection = .PERSPECTIVE,
-				},
-			)
+	// Get camera transform
+	camera_transform := ecs_get_transform(main_camera)
+	if camera_transform == nil {
+		log_warning(.ENGINE, "Main camera has no transform component")
+		return
+	}
 
-			// Get all renderable entities
-			renderer_entities := ecs_get_entities_with_component(.RENDERER)
-			defer delete(renderer_entities)
+	// Update engine camera with scene camera
+	engine.camera.position = camera_transform.position
+	engine.camera.target = camera_transform.position + raylib.Vector3{0, 0, 1} // Look forward
+	engine.camera.up = {0, 1, 0}
+	engine.camera.fovy = camera.fov
+	engine.camera.projection = .PERSPECTIVE
 
-			// Draw all renderable entities
-			for entity in renderer_entities {
-				renderer := ecs_get_renderer(entity)
-				transform := ecs_get_transform(entity)
+	raylib.BeginMode3D(engine.camera)
 
-				if renderer != nil && transform != nil && renderer.visible {
-					// Load and render the model
-					model := load_model(renderer.mesh)
-					if model != nil {
-						// Set model texture if available
-						if renderer.material != "" {
-							texture := load_texture(renderer.material)
-							if texture.id != 0 {
-								model.texture = texture
-							}
-						}
+	// Draw grid
+	raylib.DrawGrid(20, 1.0)
 
-						// Render the model
-						render_model(model, transform)
-					} else {
-						// Fallback to cube if model loading fails
-						position := raylib.Vector3 {
-							transform.position[0],
-							transform.position[1],
-							transform.position[2],
-						}
-						size := raylib.Vector3 {
-							transform.scale[0],
-							transform.scale[1],
-							transform.scale[2],
-						}
-						raylib.DrawCube(position, size.x, size.y, size.z, raylib.RED)
-						raylib.DrawCubeWires(position, size.x, size.y, size.z, raylib.WHITE)
-					}
-				}
+	// Draw coordinate axes
+	raylib.DrawLine3D({0, 0, 0}, {10, 0, 0}, raylib.RED) // X axis
+	raylib.DrawLine3D({0, 0, 0}, {0, 10, 0}, raylib.GREEN) // Y axis
+	raylib.DrawLine3D({0, 0, 0}, {0, 0, 10}, raylib.BLUE) // Z axis
+
+	// Render scene entities
+	if scene_is_loaded() {
+		entities := scene_get_entities()
+		defer delete(entities)
+
+		for entity in entities {
+			// Get renderer component
+			renderer := ecs_get_renderer(entity)
+			if renderer == nil || !renderer.enabled || !renderer.visible {
+				continue
 			}
 
-			// End 3D mode
-			raylib.EndMode3D()
+			// Get transform component
+			transform := ecs_get_transform(entity)
+			if transform == nil || !transform.enabled {
+				continue
+			}
+
+			// Load model if needed
+			model := get_model(renderer.mesh)
+			if model == nil {
+				continue
+			}
+
+			// Render model
+			render_model(model, transform.position, transform.rotation, transform.scale)
 		}
 	}
 
-	// Draw editor UI in debug mode
-	when ODIN_DEBUG {
-		editor_render()
+	raylib.EndMode3D()
 
-		// Draw FPS counter
-		raylib.DrawFPS(10, 10)
-
-		// Draw play mode indicator
-		if engine_is_playing {
-			raylib.DrawText("PLAY MODE", raylib.GetScreenWidth() - 120, 10, 20, raylib.GREEN)
-		}
-	}
-
-	// End drawing
-	raylib.EndDrawing()
-
-	return true
+	// Draw FPS
+	raylib.DrawFPS(10, 10)
 }
 
-// Shutdown the engine
-engine_shutdown :: proc() {
-	log_info(.ENGINE, "Shutting down Fenrir Engine")
-
-	// Shutdown editor in debug mode
-	when ODIN_DEBUG {
-		editor_shutdown()
-	}
-
-	// Shutdown subsystems in reverse order
-	scene_shutdown()
-	ecs_shutdown()
-
-	// Shutdown Raylib using our wrapper
-	raylib.CloseWindow()
-}
-
-// Run the engine main loop
-engine_run :: proc() {
-	// Main game loop
-	for engine_is_running {
-
-		// Check if Escape key is pressed
-		if raylib.IsKeyPressed(raylib.KeyboardKey.ESCAPE) {
-			log_info(.ENGINE, "Escape key pressed, quitting")
-			engine_is_running = false
-		}
-
-		if !engine_update() {
-			break
-		}
-		engine_render()
-	}
-}
-
-// Initialize the asset manager
-asset_manager_init :: proc() {
-	log_info(.ENGINE, "Initializing asset manager")
-	asset_manager.models = make(map[string]Model)
-	asset_manager.textures = make(map[string]raylib.Texture2D)
-}
-
-// Load a texture
-load_texture :: proc(path: string) -> raylib.Texture2D {
-	// Check if texture is already loaded
-	if texture, ok := asset_manager.textures[path]; ok {
-		return texture
-	}
-
-	// Load texture
-	texture := raylib.LoadTexture(strings.clone_to_cstring(path))
-	if texture.id == 0 {
-		log_error(.ENGINE, "Failed to load texture: %s", path)
-		return {}
-	}
-
-	// Store texture in asset manager
-	asset_manager.textures[path] = texture
-	return texture
-}
-
-// Load a model from a GLB file
-load_model :: proc(path: string, config: ^Model_Config = nil) -> ^Model {
-	// Use default config if none provided
-	config := config if config != nil else &DEFAULT_MODEL_CONFIG
-
-	// Check if model is already loaded
-	if model, ok := &asset_manager.models[path]; ok {
-		return model
-	}
-
-	log_info(.ENGINE, "Loading model: %s", path)
-
-	// Load model
-	model := new(Model)
-	model.model = raylib.LoadModel(strings.clone_to_cstring(path))
-	if model.model.meshCount == 0 {
-		log_error(.ENGINE, "Failed to load model: %s (meshCount: %d)", path, model.model.meshCount)
-		return nil
-	}
-
-	// Log detailed model info
-	log_info(
-		.ENGINE,
-		"Model loaded: %s\n  Meshes: %d\n  Materials: %d\n  Bones: %d\n  BindPose: %v",
-		path,
-		model.model.meshCount,
-		model.model.materialCount,
-		model.model.boneCount,
-		model.model.bindPose != nil,
-	)
-
-	// Setup materials
-	setup_model_materials(model, config)
-
-	// Store model in asset manager
-	asset_manager.models[path] = model^
-
-	return model
+// Check if the engine should continue running
+engine_should_run :: proc() -> bool {
+	return engine.running && !raylib.WindowShouldClose()
 }
 
 // Render a model
-render_model :: proc(model: ^Model, transform: ^Transform) {
-	if model == nil || transform == nil {
+render_model :: proc(
+	model: ^raylib.Model,
+	position: raylib.Vector3,
+	rotation: raylib.Vector3,
+	scale: raylib.Vector3,
+) {
+	if model == nil {
 		return
 	}
 
 	// Set up model matrix
-	model_matrix := raylib.Matrix(1)
-	model_matrix =
-		model_matrix *
-		raylib.MatrixTranslate(transform.position.x, transform.position.y, transform.position.z)
-	model_matrix =
-		model_matrix *
-		raylib.MatrixRotateXYZ(
-			raylib.Vector3{transform.rotation.x, transform.rotation.y, transform.rotation.z},
-		)
-	model_matrix =
-		model_matrix * raylib.MatrixScale(transform.scale.x, transform.scale.y, transform.scale.z)
+	model_matrix :=
+		raylib.MatrixRotateXYZ(rotation) *
+		raylib.MatrixScale(scale.x, scale.y, scale.z) *
+		raylib.MatrixTranslate(position.x, position.y, position.z)
 
 	// Apply model matrix to the model
-	model.model.transform = model_matrix
+	model.transform = model_matrix
 
-	// Draw model with its materials using Raylib's built-in function
-	raylib.DrawModel(model.model, raylib.Vector3{0, 0, 0}, 1.0, raylib.WHITE)
+	// Draw model
+	raylib.DrawModel(model^, position, 1.0, raylib.WHITE)
 }
