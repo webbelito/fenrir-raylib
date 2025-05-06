@@ -276,7 +276,7 @@ engine_render :: proc() {
 		raylib.DrawText("EDIT MODE", 10, 40, 20, raylib.YELLOW)
 	}
 
-	// Render editor UI
+	// Render editor UI as overlay
 	editor_render()
 
 	// End ImGui frame and render
