@@ -222,17 +222,29 @@ editor_render :: proc() {
 			}
 			imgui.EndMenu()
 		}
+
+		// Window menu
+		if imgui.BeginMenu("Window") {
+			if imgui.MenuItem("Scene Tree", nil, editor.scene_tree_open) {
+				editor.scene_tree_open = !editor.scene_tree_open
+			}
+			if imgui.MenuItem("Inspector", nil, editor.inspector_open) {
+				editor.inspector_open = !editor.inspector_open
+			}
+			imgui.EndMenu()
+		}
 		imgui.EndMainMenuBar()
 	}
 
 	// Get the main window size
 	window_size := imgui.GetIO().DisplaySize
 	panel_width := window_size.x * 0.2 // 20% of screen width
+	menu_bar_height := imgui.GetFrameHeight() // Get the height of the menu bar
 
 	// Render scene tree panel (fixed on left)
 	if editor.scene_tree_open {
-		imgui.SetNextWindowPos({0, 0})
-		imgui.SetNextWindowSize({panel_width, window_size.y})
+		imgui.SetNextWindowPos({0, menu_bar_height})
+		imgui.SetNextWindowSize({panel_width, window_size.y - menu_bar_height})
 		window_flags := imgui.WindowFlags{.NoCollapse, .NoResize, .NoMove}
 		if imgui.Begin("Scene Tree", &editor.scene_tree_open, window_flags) {
 			render_scene_tree()
@@ -242,8 +254,8 @@ editor_render :: proc() {
 
 	// Render inspector panel (fixed on right)
 	if editor.inspector_open {
-		imgui.SetNextWindowPos({window_size.x - panel_width, 0})
-		imgui.SetNextWindowSize({panel_width, window_size.y})
+		imgui.SetNextWindowPos({window_size.x - panel_width, menu_bar_height})
+		imgui.SetNextWindowSize({panel_width, window_size.y - menu_bar_height})
 		window_flags := imgui.WindowFlags{.NoCollapse, .NoResize, .NoMove}
 		if imgui.Begin("Inspector", &editor.inspector_open, window_flags) {
 			render_inspector()
