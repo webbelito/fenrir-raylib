@@ -121,31 +121,26 @@ scene_scan_available_scenes :: proc() {
 		return
 	}
 
-	// Open the directory
-	dir, err := os.open(scenes_dir)
-	if err != os.ERROR_NONE {
-		log_error(.ENGINE, "Failed to open scenes directory: %v", err)
-		return
-	}
-	defer os.close(dir)
+	// Walk through the directory
+	filepath.walk(
+		scenes_dir,
+		proc(info: os.File_Info, in_err: os.Errno, user_data: rawptr) -> (os.Errno, bool) {
+			if in_err != os.ERROR_NONE {
+				log_error(.ENGINE, "Error accessing path: %v", in_err)
+				return in_err, false
+			}
 
-	// Read directory entries
-	entries, read_err := os.read_dir(dir, 0)
-	if read_err != os.ERROR_NONE {
-		log_error(.ENGINE, "Failed to read scenes directory: %v", read_err)
-		return
-	}
-	defer os.file_info_slice_delete(entries)
+			if !info.is_dir && strings.has_suffix(info.name, ".json") {
+				// Add to available scenes list
+				scene_name := strings.clone(info.name)
+				append(&available_scenes, scene_name)
+				log_debug(.ENGINE, "Found scene: %s", scene_name)
+			}
 
-	// Filter for .json files
-	for entry in entries {
-		if !entry.is_dir && strings.has_suffix(entry.name, ".json") {
-			// Add to available scenes list
-			scene_name := strings.clone(entry.name)
-			append(&available_scenes, scene_name)
-			log_debug(.ENGINE, "Found scene: %s", scene_name)
-		}
-	}
+			return os.ERROR_NONE, true
+		},
+		nil,
+	)
 
 	log_info(.ENGINE, "Found %d scene(s)", len(available_scenes))
 }
@@ -168,21 +163,9 @@ scene_new :: proc(name: string) -> bool {
 	current_scene.loaded = true
 	current_scene.dirty = true
 
-	// Create default entities
-	root := ecs_create_entity()
-	ecs_add_transform(root, {0, 0, 0}, {0, 0, 0}, {1, 1, 1})
-	append(&current_scene.entities, root)
-
-	// Create camera
-	camera := ecs_create_entity()
-	ecs_add_transform(camera, {0, 5, -10}, {0, 0, 0}, {1, 1, 1})
-	ecs_add_camera(camera, 60.0, 0.1, 1000.0, true)
-	append(&current_scene.entities, camera)
-
 	// Create a test cube
 	cube := ecs_create_entity()
 	ecs_add_transform(cube, {0, 0, 0}, {0, 0, 0}, {1, 1, 1})
-	ecs_add_renderer(cube, "cube", "default_material")
 	append(&current_scene.entities, cube)
 
 	log_info(.ENGINE, "Created new scene: %s", name)
@@ -200,52 +183,25 @@ scene_load :: proc(path: string) -> bool {
 		scene_unload()
 	}
 
-	log_info(.ENGINE, "Loading scene from: %s", path)
-
 	// Check if file exists
 	if !os.exists(path) {
 		log_error(.ENGINE, "Scene file does not exist: %s", path)
 		return false
 	}
 
-	// Read file
-	data_bytes, ok := os.read_entire_file(path)
+	// Read file contents
+	data, ok := os.read_entire_file(path)
 	if !ok {
-		log_error(.ENGINE, "Failed to read scene file: %s (Error: %v)", path, ok)
+		log_error(.ENGINE, "Failed to read scene file: %s", path)
 		return false
 	}
-	defer delete(data_bytes)
-
-	log_info(.ENGINE, "Successfully read scene file, size: %d bytes", len(data_bytes))
+	defer delete(data)
 
 	// Parse JSON
 	scene_data: Scene_Data
-	err := json.unmarshal(data_bytes, &scene_data)
-	if err != nil {
-		log_error(.ENGINE, "Failed to parse scene data: %v (Data: %s)", err, string(data_bytes))
+	if err := json.unmarshal(data, &scene_data); err != nil {
+		log_error(.ENGINE, "Failed to parse scene file: %v", err)
 		return false
-	}
-
-	log_info(
-		.ENGINE,
-		"Successfully parsed scene data: %s with %d entities",
-		scene_data.name,
-		len(scene_data.entities),
-	)
-	defer {
-		for entity in scene_data.entities {
-			delete(entity.name)
-			if entity.renderer != nil {
-				delete(entity.renderer.?.mesh_path)
-				delete(entity.renderer.?.material_path)
-			}
-			if script, ok := entity.script.?; ok {
-				delete(script.script_name)
-			}
-		}
-		delete(scene_data.entities)
-		delete(scene_data.name)
-		delete(scene_data.version)
 	}
 
 	// Initialize new scene
@@ -254,62 +210,62 @@ scene_load :: proc(path: string) -> bool {
 	current_scene.loaded = true
 	current_scene.dirty = false
 
-	// Create entities from data
+	// Create entities from scene data
 	for entity_data in scene_data.entities {
-		entity := create_entity_from_data(entity_data.transform)
-		if entity == 0 {
-			continue
+		entity := ecs_create_entity()
+
+		// Add transform component
+		ecs_add_transform(
+			entity,
+			entity_data.transform.position,
+			entity_data.transform.rotation,
+			entity_data.transform.scale,
+		)
+
+		// Add renderer component if present
+		if renderer, ok := entity_data.renderer.(Renderer_Data); ok {
+			ecs_add_renderer(entity, renderer.mesh_path, renderer.material_path)
 		}
 
-		// Add renderer
-		if renderer_data, ok := entity_data.renderer.?; ok {
-			renderer := ecs_add_renderer(entity)
-			if renderer != nil {
-				renderer.mesh = renderer_data.mesh_path
-				renderer.material = renderer_data.material_path
+		// Add camera component if present
+		if camera, ok := entity_data.camera.(Camera_Data); ok {
+			ecs_add_camera(entity, camera.fov, camera.near, camera.far, camera.is_main)
+		}
+
+		// Add light component if present
+		if light, ok := entity_data.light.(Light_Data); ok {
+			// Convert light type string to enum
+			light_type: Light_Type
+			switch light.light_type {
+			case "DIRECTIONAL":
+				light_type = .DIRECTIONAL
+			case "POINT":
+				light_type = .POINT
+			case "SPOT":
+				light_type = .SPOT
+			case:
+				light_type = .POINT
 			}
+
+			ecs_add_light(
+				entity,
+				light_type,
+				light.color,
+				light.intensity,
+				light.range,
+				light.spot_angle,
+			)
 		}
 
-		// Add camera
-		if camera_data, ok := entity_data.camera.?; ok {
-			camera := ecs_add_camera(entity)
-			if camera != nil {
-				camera.fov = camera_data.fov
-				camera.near = camera_data.near
-				camera.far = camera_data.far
-				camera.is_main = camera_data.is_main
-			}
-		}
-
-		// Add light
-		if light_data, ok := entity_data.light.?; ok {
-			light := ecs_add_light(entity)
-			if light != nil {
-				light.color = light_data.color
-				light.intensity = light_data.intensity
-				light.range = light_data.range
-				light.spot_angle = light_data.spot_angle
-				// Parse light type
-				switch light_data.light_type {
-				case "DIRECTIONAL":
-					light.light_type = .DIRECTIONAL
-				case "POINT":
-					light.light_type = .POINT
-				case "SPOT":
-					light.light_type = .SPOT
-				}
-			}
-		}
-
-		// Add script
-		if script_data, ok := entity_data.script.?; ok {
-			_ = ecs_add_script(entity, script_data.script_name)
+		// Add script component if present
+		if script, ok := entity_data.script.(Script_Data); ok {
+			ecs_add_script(entity, script.script_name)
 		}
 
 		append(&current_scene.entities, entity)
 	}
 
-	log_info(.ENGINE, "Scene loaded successfully: %s", scene_data.name)
+	log_info(.ENGINE, "Loaded scene: %s", path)
 	return true
 }
 
@@ -847,7 +803,7 @@ load_scene :: proc(path: string) -> ^Scene {
 				light.intensity = light_data.intensity
 				light.range = light_data.range
 				light.spot_angle = light_data.spot_angle
-				// Parse light type
+				// Convert light type string to enum
 				switch light_data.light_type {
 				case "DIRECTIONAL":
 					light.light_type = .DIRECTIONAL

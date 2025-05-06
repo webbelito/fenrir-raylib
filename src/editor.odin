@@ -13,11 +13,18 @@ import raylib "vendor:raylib"
 
 // Editor state
 Editor_State :: struct {
-	initialized:     bool,
-	selected_entity: Entity,
-	scene_tree_open: bool,
-	inspector_open:  bool,
-	scene_path:      string,
+	initialized:      bool,
+	selected_entity:  Entity,
+	scene_tree_open:  bool,
+	inspector_open:   bool,
+	scene_path:       string,
+	show_save_dialog: bool,
+	save_dialog_name: [256]u8, // Buffer for scene name input
+	show_open_dialog: bool, // Flag to show open scene dialog
+	available_scenes: [dynamic]string, // List of available scene files
+	current_dir:      string, // Current directory for file browser
+	file_list:        [dynamic]string, // List of files in current directory
+	selected_file:    string, // Currently selected file
 }
 
 editor: Editor_State
@@ -29,14 +36,53 @@ editor_init :: proc() -> bool {
 	}
 
 	editor = Editor_State {
-		initialized     = true,
-		scene_tree_open = true,
-		inspector_open  = true,
-		scene_path      = "",
+		initialized      = true,
+		scene_tree_open  = true,
+		inspector_open   = true,
+		scene_path       = "",
+		available_scenes = make([dynamic]string),
+		current_dir      = "assets/scenes",
+		file_list        = make([dynamic]string),
 	}
 
 	log_info(.ENGINE, "Editor initialized")
 	return true
+}
+
+// Scan directory for files
+scan_directory :: proc(dir_path: string) {
+	clear(&editor.file_list)
+
+	// Ensure the directory exists
+	if !os.exists(dir_path) {
+		log_info(.ENGINE, "Directory does not exist, creating: %s", dir_path)
+		os.make_directory(dir_path)
+		return
+	}
+
+	// Read directory contents
+	if dir, err := os.open(dir_path); err == os.ERROR_NONE {
+		defer os.close(dir)
+
+		// Read all entries at once
+		entries, read_err := os.read_dir(dir, 0)
+		if read_err == os.ERROR_NONE {
+			defer os.file_info_slice_delete(entries)
+
+			// Filter for .json files
+			for entry in entries {
+				if !entry.is_dir && filepath.ext(entry.name) == ".json" {
+					name := strings.clone(entry.name)
+					append_elem(&editor.file_list, name)
+				}
+			}
+			log_info(.ENGINE, "Found %d scene files", len(editor.file_list))
+		} else {
+			log_error(.ENGINE, "Failed to read directory: %s", dir_path)
+		}
+	} else {
+		log_error(.ENGINE, "Failed to open directory: %s", dir_path)
+	}
 }
 
 // Update the editor (only in debug mode)
@@ -93,6 +139,139 @@ render_inspector :: proc() {
 	}
 }
 
+// Render the file browser dialog
+render_file_browser :: proc() {
+	if editor.show_open_dialog {
+		// Scan directory if needed
+		if len(editor.file_list) == 0 {
+			scan_directory(editor.current_dir)
+		}
+
+		imgui.SetNextWindowPos(imgui.GetIO().DisplaySize * 0.5, .Always, {0.5, 0.5})
+		imgui.SetNextWindowSize({600, 400})
+		if imgui.Begin(
+			"Open Scene###OpenSceneWindow",
+			&editor.show_open_dialog,
+			{.AlwaysAutoResize, .NoCollapse},
+		) {
+			// Current directory
+			imgui.Text("Current Directory: %s", editor.current_dir)
+			imgui.Separator()
+
+			// Display files
+			for file, i in editor.file_list {
+				file_cstr := strings.clone_to_cstring(file)
+				defer delete(file_cstr)
+				label := fmt.tprintf("##FileItem%d", i)
+				label_cstr := strings.clone_to_cstring(label)
+				defer delete(label_cstr)
+
+				// Make the selectable area wider
+				imgui.PushItemWidth(-1)
+				if imgui.Selectable(label_cstr, file == editor.selected_file, {.SpanAllColumns}) {
+					editor.selected_file = file
+				}
+				imgui.PopItemWidth()
+
+				imgui.SameLine()
+				imgui.Text(file_cstr)
+			}
+
+			imgui.Separator()
+			// Buttons
+			if imgui.Button("Open###OpenSceneOpenButton") {
+				if editor.selected_file != "" {
+					// Ensure we have a proper path with the filename
+					path := fmt.tprintf("%s/%s", editor.current_dir, editor.selected_file)
+					if !strings.has_suffix(path, ".json") {
+						path = fmt.tprintf("%s.json", path)
+					}
+					log_info(.ENGINE, "Attempting to open scene: %s", path)
+					if scene_load(path) {
+						editor.scene_path = path
+						editor.show_open_dialog = false
+						log_info(.ENGINE, "Successfully opened scene: %s", path)
+					} else {
+						log_error(.ENGINE, "Failed to open scene: %s", path)
+					}
+				}
+			}
+			imgui.SameLine()
+			if imgui.Button("Cancel###OpenSceneCancelButton") {
+				editor.show_open_dialog = false
+			}
+		}
+		imgui.End()
+	}
+}
+
+// Render the save dialog
+render_save_dialog :: proc() {
+	if editor.show_save_dialog {
+		imgui.SetNextWindowPos(imgui.GetIO().DisplaySize * 0.5, .Always, {0.5, 0.5})
+		imgui.SetNextWindowSize({300, 100})
+		if imgui.Begin(
+			"Save Scene###SaveSceneWindow",
+			&editor.show_save_dialog,
+			{.AlwaysAutoResize, .NoCollapse},
+		) {
+			imgui.Text("Enter scene name:")
+			imgui.Spacing()
+
+			// Text input for scene name
+			if imgui.InputText(
+				"Scene Name###SaveSceneNameInput",
+				cstring(raw_data(editor.save_dialog_name[:])),
+				size_of(editor.save_dialog_name),
+				imgui.InputTextFlags{.EnterReturnsTrue},
+			) {
+				// Convert the name buffer to a string
+				scene_name := string(editor.save_dialog_name[:])
+				// Trim any null terminators
+				for i := 0; i < len(scene_name); i += 1 {
+					if scene_name[i] == 0 {
+						scene_name = scene_name[:i]
+						break
+					}
+				}
+
+				// Create the save path
+				save_path := fmt.tprintf("assets/scenes/%s.json", scene_name)
+				if scene_save(save_path) {
+					editor.scene_path = save_path
+					editor.show_save_dialog = false
+				}
+			}
+
+			imgui.Spacing()
+			if imgui.Button("Save###SaveSceneSaveButton") {
+				// Convert the name buffer to a string
+				scene_name := string(editor.save_dialog_name[:])
+				// Trim any null terminators
+				for i := 0; i < len(scene_name); i += 1 {
+					if scene_name[i] == 0 {
+						scene_name = scene_name[:i]
+						break
+					}
+				}
+
+				// Create the save path
+				save_path := fmt.tprintf("assets/scenes/%s.json", scene_name)
+				if scene_save(save_path) {
+					editor.scene_path = save_path
+					editor.show_save_dialog = false
+				}
+			}
+
+			imgui.SameLine()
+			if imgui.Button("Cancel###SaveSceneCancelButton") {
+				editor.show_save_dialog = false
+			}
+		}
+		imgui.End()
+	}
+}
+
 // Render the editor UI
 editor_render :: proc() {
 	if !editor.initialized {
@@ -109,29 +288,22 @@ editor_render :: proc() {
 				editor.scene_path = ""
 			}
 			if imgui.MenuItem("Open Scene", "Ctrl+O") {
-				// TODO: Open file dialog
-				path := "assets/scenes/test.json"
-				log_info(.ENGINE, "Attempting to open scene: %s", path)
-				if scene_load(path) {
-					editor.scene_path = path
-					log_info(.ENGINE, "Successfully opened scene: %s", path)
-				} else {
-					log_error(.ENGINE, "Failed to open scene: %s", path)
-				}
+				scan_directory(editor.current_dir) // Refresh the list
+				editor.show_open_dialog = true
 			}
 			if imgui.MenuItem("Save Scene", "Ctrl+S") {
 				if editor.scene_path == "" {
-					// TODO: Save file dialog
-					editor.scene_path = "assets/scenes/test.json"
+					editor.show_save_dialog = true
+					// Initialize the name buffer with the current scene name
+					copy(editor.save_dialog_name[:], current_scene.name)
+				} else {
+					scene_save(editor.scene_path)
 				}
-				scene_save(editor.scene_path)
 			}
 			if imgui.MenuItem("Save Scene As...", "Ctrl+Shift+S") {
-				// TODO: Save file dialog
-				path := "assets/scenes/test.json"
-				if scene_save(path) {
-					editor.scene_path = path
-				}
+				editor.show_save_dialog = true
+				// Initialize the name buffer with the current scene name
+				copy(editor.save_dialog_name[:], current_scene.name)
 			}
 			imgui.Separator()
 			if imgui.MenuItem("Exit", "Alt+F4") {
@@ -235,6 +407,10 @@ editor_render :: proc() {
 		}
 		imgui.EndMainMenuBar()
 	}
+
+	// Render dialogs
+	render_file_browser()
+	render_save_dialog()
 
 	// Get the main window size
 	window_size := imgui.GetIO().DisplaySize

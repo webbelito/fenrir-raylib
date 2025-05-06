@@ -163,8 +163,11 @@ engine_init :: proc(config: Engine_Config) -> bool {
 	// Initialize scene system
 	scene_init()
 
-	// Create a default scene
-	scene_new("Default")
+	// Create a new empty scene
+	if !scene_new("Untitled") {
+		log_error(.ENGINE, "Failed to create initial scene")
+		return false
+	}
 
 	// Initialize engine state
 	engine.initialized = true
@@ -245,7 +248,7 @@ engine_render :: proc() {
 		return
 	}
 
-	// Start ImGui frame first
+	// Start ImGui frame
 	imgui_begin_frame()
 
 	// Begin drawing
@@ -263,7 +266,6 @@ engine_render :: proc() {
 
 		// Draw all entities with transforms
 		for entity, transform in entity_manager.transforms {
-			// Draw a red cube at each entity's position
 			raylib.DrawCube(transform.position, 1, 1, 1, raylib.RED)
 		}
 	}
@@ -282,7 +284,7 @@ engine_render :: proc() {
 	// Render editor UI as overlay
 	editor_render()
 
-	// End ImGui frame and render
+	// End ImGui frame
 	imgui_end_frame()
 }
 
