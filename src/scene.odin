@@ -133,13 +133,11 @@ scene_new :: proc(name: string) -> bool {
 	ecs_add_camera(camera, 60.0, 0.1, 1000.0, true)
 	append(&current_scene.entities, camera)
 
-	// Create ambulance
-	ambulance := create_ambulance_entity()
-	if transform := ecs_get_transform(ambulance); transform != nil {
-		transform.position = {0, 0, 0} // Position the ambulance at the origin
-		transform.rotation = {0, 0, 0} // No rotation
-		transform.scale = {1, 1, 1} // Default scale
-	}
+	// Create a test cube
+	cube := ecs_create_entity()
+	ecs_add_transform(cube, {0, 0, 0}, {0, 0, 0}, {1, 1, 1})
+	ecs_add_renderer(cube, "cube", "default_material")
+	append(&current_scene.entities, cube)
 
 	log_info(.ENGINE, "Created new scene: %s", name)
 	return true
@@ -418,4 +416,33 @@ create_ambulance_entity :: proc() -> Entity {
 	current_scene.dirty = true
 
 	return entity
+}
+
+// Get the camera for rendering
+scene_get_camera :: proc() -> raylib.Camera3D {
+	if !current_scene.loaded {
+		return raylib.Camera3D{}
+	}
+
+	// Get main camera entity
+	main_camera := scene_get_main_camera()
+	if main_camera == 0 {
+		return raylib.Camera3D{}
+	}
+
+	// Get camera and transform components
+	camera := ecs_get_camera(main_camera)
+	transform := ecs_get_transform(main_camera)
+	if camera == nil || transform == nil {
+		return raylib.Camera3D{}
+	}
+
+	// Create and return camera
+	return raylib.Camera3D {
+		position = transform.position,
+		target = {transform.position.x, transform.position.y, transform.position.z - 1},
+		up = {0, 1, 0},
+		fovy = camera.fov,
+		projection = .PERSPECTIVE,
+	}
 }

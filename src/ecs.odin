@@ -312,3 +312,17 @@ ecs_add_component :: proc(entity: Entity, component: ^Component) {
 		break
 	}
 }
+
+// Get all entities with renderer components
+ecs_get_renderers :: proc() -> map[Entity]^Renderer {
+	renderers := make(map[Entity]^Renderer)
+	for entity in 1 ..< entity_manager.next_entity_id {
+		if ecs_has_component(entity, .RENDERER) {
+			renderer := ecs_get_renderer(entity)
+			if renderer != nil {
+				renderers[entity] = renderer
+			}
+		}
+	}
+	return renderers
+}
