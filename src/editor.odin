@@ -66,23 +66,75 @@ render_inspector :: proc() {
 		// Display transform component if it exists
 		if transform := ecs_get_transform(editor.selected_entity); transform != nil {
 			if imgui.CollapsingHeader("Transform") {
-				// Position
-				pos := transform.position
-				if imgui.DragFloat3("Position", &pos) {
-					transform.position = pos
-				}
+				// Position section
+				imgui.Text("Position")
+				imgui.PushItemWidth(60) // Set width for input fields
+				imgui.PushStyleColor(imgui.Col.Text, 0xFF0000FF) // Red
+				imgui.Text("X")
+				imgui.PopStyleColor()
+				imgui.SameLine()
+				if imgui.InputFloat("##PosX", &transform.position.x) {}
+				imgui.SameLine()
+				imgui.PushStyleColor(imgui.Col.Text, 0xFF00FF00) // Green
+				imgui.Text("Y")
+				imgui.PopStyleColor()
+				imgui.SameLine()
+				if imgui.InputFloat("##PosY", &transform.position.y) {}
+				imgui.SameLine()
+				imgui.PushStyleColor(imgui.Col.Text, 0xFFFF0000) // Blue
+				imgui.Text("Z")
+				imgui.PopStyleColor()
+				imgui.SameLine()
+				if imgui.InputFloat("##PosZ", &transform.position.z) {}
+				imgui.PopItemWidth()
 
-				// Rotation
-				rot := transform.rotation
-				if imgui.DragFloat3("Rotation", &rot) {
-					transform.rotation = rot
-				}
+				imgui.Separator()
 
-				// Scale
-				scale := transform.scale
-				if imgui.DragFloat3("Scale", &scale) {
-					transform.scale = scale
-				}
+				// Rotation section
+				imgui.Text("Rotation")
+				imgui.PushItemWidth(60) // Set width for input fields
+				imgui.PushStyleColor(imgui.Col.Text, 0xFF0000FF) // Red
+				imgui.Text("X")
+				imgui.PopStyleColor()
+				imgui.SameLine()
+				if imgui.InputFloat("##RotX", &transform.rotation.x) {}
+				imgui.SameLine()
+				imgui.PushStyleColor(imgui.Col.Text, 0xFF00FF00) // Green
+				imgui.Text("Y")
+				imgui.PopStyleColor()
+				imgui.SameLine()
+				if imgui.InputFloat("##RotY", &transform.rotation.y) {}
+				imgui.SameLine()
+				imgui.PushStyleColor(imgui.Col.Text, 0xFFFF0000) // Blue
+				imgui.Text("Z")
+				imgui.PopStyleColor()
+				imgui.SameLine()
+				if imgui.InputFloat("##RotZ", &transform.rotation.z) {}
+				imgui.PopItemWidth()
+
+				imgui.Separator()
+
+				// Scale section
+				imgui.Text("Scale")
+				imgui.PushItemWidth(60) // Set width for input fields
+				imgui.PushStyleColor(imgui.Col.Text, 0xFF0000FF) // Red
+				imgui.Text("X")
+				imgui.PopStyleColor()
+				imgui.SameLine()
+				if imgui.InputFloat("##ScaleX", &transform.scale.x) {}
+				imgui.SameLine()
+				imgui.PushStyleColor(imgui.Col.Text, 0xFF00FF00) // Green
+				imgui.Text("Y")
+				imgui.PopStyleColor()
+				imgui.SameLine()
+				if imgui.InputFloat("##ScaleY", &transform.scale.y) {}
+				imgui.SameLine()
+				imgui.PushStyleColor(imgui.Col.Text, 0xFFFF0000) // Blue
+				imgui.Text("Z")
+				imgui.PopStyleColor()
+				imgui.SameLine()
+				if imgui.InputFloat("##ScaleZ", &transform.scale.z) {}
+				imgui.PopItemWidth()
 			}
 		}
 	}
