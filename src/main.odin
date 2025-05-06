@@ -3,11 +3,31 @@ package main
 import "core:fmt"
 import "core:log"
 import "core:strings"
-
-import imgui_rl "../vendor/imgui_impl_raylib"
-import imgui "../vendor/odin-imgui"
-
 import raylib "vendor:raylib"
+
+// Initialize raylib with the given configuration
+init_raylib :: proc(config: Engine_Config) -> bool {
+	// Set window flags
+	raylib.SetConfigFlags({.VSYNC_HINT})
+
+	// Initialize window
+	raylib.InitWindow(
+		config.window_width,
+		config.window_height,
+		strings.clone_to_cstring(config.app_name),
+	)
+
+	// Set target FPS
+	raylib.SetTargetFPS(config.target_fps)
+
+	// Check if window was created successfully
+	if !raylib.IsWindowReady() {
+		log_error(.ENGINE, "Failed to initialize raylib window")
+		return false
+	}
+
+	return true
+}
 
 main :: proc() {
 	// Initialize logging first
@@ -25,39 +45,21 @@ main :: proc() {
 		disable_escape_quit = true,
 	}
 
-	// Initialize raylib first
-	raylib.SetConfigFlags({.VSYNC_HINT})
-	raylib.InitWindow(
-		config.window_width,
-		config.window_height,
-		strings.clone_to_cstring(config.app_name),
-	)
-	raylib.SetTargetFPS(config.target_fps)
+	// Initialize raylib
+	if !init_raylib(config) {
+		log_error(.ENGINE, "Failed to initialize raylib")
+		return
+	}
 
 	// Initialize time system
 	time_init()
 
-	// Initialize ImGUI
-	imgui.CreateContext(nil)
-	defer imgui.DestroyContext(nil)
-
-	// Configure ImGUI
-	io := imgui.GetIO()
-	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad, .DockingEnable}
-	io.ConfigDockingWithShift = true // Enable docking with Shift key to reduce visual noise
-	io.IniFilename = nil // Disable imgui.ini
-	io.LogFilename = nil // Disable imgui_log.txt
-	io.DeltaTime = 1.0 / 60.0 // Set initial delta time
-
-	// Set ImGUI style
-	imgui.StyleColorsDark(nil)
-
-	// Initialize ImGUI with Raylib
-	imgui_rl.init()
-	defer imgui_rl.shutdown()
-
-	// Build font atlas
-	imgui_rl.build_font_atlas()
+	// Initialize editor (which handles ImGui initialization)
+	if !editor_init() {
+		log_error(.ENGINE, "Failed to initialize editor")
+		return
+	}
+	defer editor_shutdown()
 
 	// Initialize engine
 	if engine_init(config) {
@@ -69,30 +71,8 @@ main :: proc() {
 			// Update engine
 			engine_update()
 
-			// Process ImGui events
-			imgui_rl.process_events()
-
-			// Start new ImGui frame
-			imgui_rl.new_frame()
-			imgui.NewFrame()
-
-			// Begin raylib drawing
-			raylib.BeginDrawing()
-			defer raylib.EndDrawing()
-
-			// Clear the background
-			raylib.ClearBackground(raylib.BLACK)
-
 			// Render engine
 			engine_render()
-
-			// Show ImGui demo window
-			demo_open := true
-			imgui.ShowDemoWindow(&demo_open)
-
-			// End ImGui frame
-			imgui.Render()
-			imgui_rl.render_draw_data(imgui.GetDrawData())
 		}
 	} else {
 		log_error(.ENGINE, "Failed to initialize Fenrir Engine")

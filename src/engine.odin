@@ -231,10 +231,20 @@ engine_update :: proc() {
 	if raylib.IsKeyDown(.LEFT_CONTROL) {
 		engine.camera.position.y -= 0.1
 	}
+
+	// Update editor
+	editor_update()
 }
 
 // Render the engine
 engine_render :: proc() {
+	// Begin raylib drawing
+	raylib.BeginDrawing()
+	defer raylib.EndDrawing()
+
+	// Clear the background
+	raylib.ClearBackground(raylib.BLACK)
+
 	// Draw 3D scene if we have one
 	if scene_is_loaded() {
 		// Get the camera from the scene
@@ -269,6 +279,9 @@ engine_render :: proc() {
 	if engine.playing {
 		raylib.DrawText("PLAY MODE", 10, 30, 20, raylib.GREEN)
 	}
+
+	// Render editor UI
+	editor_render()
 }
 
 // Check if the engine should continue running

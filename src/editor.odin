@@ -27,6 +27,12 @@ editor_init :: proc() -> bool {
 
 		log_info(.ENGINE, "Initializing editor")
 
+		// Initialize ImGui
+		if !imgui_init() {
+			log_error(.ENGINE, "Failed to initialize ImGui")
+			return false
+		}
+
 		// Set default state
 		editor_state.active = true
 		editor_state.initialized = true
@@ -55,9 +61,14 @@ editor_render :: proc() {
 			return
 		}
 
+		// Start ImGui frame
+		imgui_begin_frame()
+
 		// Show the ImGui demo window
-		demo_open := true
-		imgui.ShowDemoWindow(&demo_open)
+		imgui_show_demo()
+
+		// End ImGui frame
+		imgui_end_frame()
 	}
 }
 
@@ -69,6 +80,9 @@ editor_shutdown :: proc() {
 		}
 
 		log_info(.ENGINE, "Shutting down editor")
+
+		// Shutdown ImGui
+		imgui_shutdown()
 
 		editor_state.initialized = false
 		editor_state.active = false
