@@ -30,30 +30,40 @@ main :: proc() {
 	// Initialize time system
 	time_init()
 
-	// Initialize editor (which handles ImGui initialization)
+	// Initialize engine first
+	if !engine_init(config) {
+		log_error(.ENGINE, "Failed to initialize Fenrir Engine")
+		return
+	}
+	defer engine_shutdown()
+
+	// Initialize ImGui first
+	if !imgui_init() {
+		log_error(.ENGINE, "Failed to initialize ImGui")
+		return
+	}
+	defer imgui_shutdown()
+
+	// Initialize editor
 	if !editor_init() {
 		log_error(.ENGINE, "Failed to initialize editor")
 		return
 	}
 	defer editor_shutdown()
 
-	// Initialize engine
-	if engine_init(config) {
-		// Main game loop
-		for !raylib.WindowShouldClose() {
-			// Update time
-			time_update()
+	log_info(.ENGINE, "All systems initialized successfully")
 
-			// Update engine
-			engine_update()
+	// Main game loop
+	for !raylib.WindowShouldClose() {
+		// Update time
+		time_update()
 
-			// Render engine
-			engine_render()
-		}
-	} else {
-		log_error(.ENGINE, "Failed to initialize Fenrir Engine")
+		// Update engine
+		engine_update()
+
+		// Render engine
+		engine_render()
 	}
-	defer engine_shutdown()
 }
 
 // Initialize raylib with the given configuration

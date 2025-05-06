@@ -238,50 +238,49 @@ engine_update :: proc() {
 
 // Render the engine
 engine_render :: proc() {
-	// Begin raylib drawing
+	if !engine.initialized {
+		return
+	}
+
+	// Start ImGui frame first
+	imgui_begin_frame()
+
+	// Begin drawing
 	raylib.BeginDrawing()
 	defer raylib.EndDrawing()
 
-	// Clear the background
+	// Clear background
 	raylib.ClearBackground(raylib.BLACK)
 
-	// Draw 3D scene if we have one
-	if scene_is_loaded() {
-		// Get the camera from the scene
-		camera := scene_get_camera()
-
-		// Set up the camera for 3D rendering
-		raylib.BeginMode3D(camera)
-
-		// Draw a grid for reference
+	// Begin 3D mode
+	raylib.BeginMode3D(engine.camera)
+	{
+		// Draw grid
 		raylib.DrawGrid(10, 1.0)
 
-		// Get all renderable entities
-		renderers := ecs_get_renderers()
-		defer delete(renderers)
-
-		// Draw each entity
-		for entity, renderer in renderers {
-			transform := ecs_get_transform(entity)
-			if transform != nil {
-				// For now, just draw a simple cube for each entity
-				// Later we'll load actual meshes
-				raylib.DrawCube(transform.position, 1.0, 1.0, 1.0, raylib.RED)
-				raylib.DrawCubeWires(transform.position, 1.0, 1.0, 1.0, raylib.WHITE)
-			}
+		// Draw all entities with transforms
+		for entity, transform in entity_manager.transforms {
+			// Draw a red cube at each entity's position
+			raylib.DrawCube(transform.position, 1, 1, 1, raylib.RED)
 		}
-
-		raylib.EndMode3D()
 	}
+	raylib.EndMode3D()
 
-	// Draw FPS and play mode indicator
+	// Draw FPS
 	raylib.DrawFPS(10, 10)
+
+	// Draw play mode indicator
 	if engine.playing {
-		raylib.DrawText("PLAY MODE", 10, 30, 20, raylib.GREEN)
+		raylib.DrawText("PLAY MODE", 10, 40, 20, raylib.GREEN)
+	} else {
+		raylib.DrawText("EDIT MODE", 10, 40, 20, raylib.YELLOW)
 	}
 
 	// Render editor UI
 	editor_render()
+
+	// End ImGui frame and render
+	imgui_end_frame()
 }
 
 // Check if the engine should continue running

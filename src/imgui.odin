@@ -6,8 +6,14 @@ import "core:log"
 
 // Initialize ImGui with default configuration
 imgui_init :: proc() -> bool {
+	log_info(.ENGINE, "Initializing ImGui")
+
 	// Create ImGui context
-	imgui.CreateContext(nil)
+	ctx := imgui.CreateContext(nil)
+	if ctx == nil {
+		log_error(.ENGINE, "Failed to create ImGui context")
+		return false
+	}
 
 	// Configure ImGui
 	io := imgui.GetIO()
@@ -23,19 +29,35 @@ imgui_init :: proc() -> bool {
 	// Initialize ImGui with Raylib
 	if !imgui_rl.init() {
 		log_error(.ENGINE, "Failed to initialize ImGui with Raylib")
+		imgui.DestroyContext(ctx)
 		return false
 	}
 
 	// Build font atlas
-	imgui_rl.build_font_atlas()
+	if err := imgui_rl.build_font_atlas(); err != nil {
+		log_error(.ENGINE, "Failed to build font atlas: %v", err)
+		imgui_rl.shutdown()
+		imgui.DestroyContext(ctx)
+		return false
+	}
 
+	log_info(.ENGINE, "ImGui initialized successfully")
 	return true
 }
 
 // Shutdown ImGui
 imgui_shutdown :: proc() {
-	imgui_rl.shutdown()
-	imgui.DestroyContext(nil)
+	log_info(.ENGINE, "Shutting down ImGui")
+
+	// Get the current context
+	ctx := imgui.GetCurrentContext()
+	if ctx != nil {
+		imgui_rl.shutdown()
+		imgui.DestroyContext(ctx)
+		log_info(.ENGINE, "ImGui shut down successfully")
+	} else {
+		log_warning(.ENGINE, "No ImGui context to shut down")
+	}
 }
 
 // Start a new ImGui frame
@@ -48,7 +70,10 @@ imgui_begin_frame :: proc() {
 // End the ImGui frame and render
 imgui_end_frame :: proc() {
 	imgui.Render()
-	imgui_rl.render_draw_data(imgui.GetDrawData())
+	draw_data := imgui.GetDrawData()
+	if draw_data != nil {
+		imgui_rl.render_draw_data(draw_data)
+	}
 }
 
 // Show the ImGui demo window
