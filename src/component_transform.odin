@@ -1,37 +1,9 @@
 package main
 
-import "core:fmt"
-
 import imgui "../vendor/odin-imgui"
+import "core:fmt"
+import "core:log"
 import raylib "vendor:raylib"
-
-// Basic component interface
-Component :: struct {
-	type:    Component_Type,
-	entity:  Entity,
-	enabled: bool,
-}
-
-// Component_Type is an enum of all component types
-Component_Type :: enum {
-	TRANSFORM,
-	RENDERER,
-	CAMERA,
-	SCRIPT,
-	LIGHT,
-	COLLIDER,
-	RIGIDBODY,
-	AUDIO_SOURCE,
-	// Add more component types as needed
-}
-
-// Component interface procedures
-Component_Interface :: struct {
-	init:             proc(_: ^Component, _: Entity) -> bool,
-	update:           proc(_: ^Component, _: f32),
-	render_inspector: proc(_: ^Component),
-	cleanup:          proc(_: ^Component),
-}
 
 // Transform component
 Transform_Component :: struct {
@@ -41,26 +13,41 @@ Transform_Component :: struct {
 	scale:       raylib.Vector3,
 }
 
-// Initialize a transform component
-transform_init :: proc(component: ^Component, entity: Entity) -> bool {
-	transform := cast(^Transform_Component)component
-	transform.type = .TRANSFORM
-	transform.entity = entity
-	transform.position = {0, 0, 0}
-	transform.rotation = {0, 0, 0}
-	transform.scale = {1, 1, 1}
-	return true
+// Add transform component to an entity
+ecs_add_transform :: proc(
+	entity: Entity,
+	position: raylib.Vector3 = {0, 0, 0},
+	rotation: raylib.Vector3 = {0, 0, 0},
+	scale: raylib.Vector3 = {1, 1, 1},
+) -> ^Transform_Component {
+	if !ecs_has_component(entity, .TRANSFORM) {
+		transform := Transform_Component {
+			_base = Component{type = .TRANSFORM, entity = entity, enabled = true},
+			position = position,
+			rotation = rotation,
+			scale = scale,
+		}
+		entity_manager.transforms[entity] = transform
+		return &entity_manager.transforms[entity]
+	}
+	return nil
 }
 
-// Update transform component
-transform_update :: proc(component: ^Component, delta_time: f32) {
-	// Add any transform-specific update logic here
+// Get transform component from an entity
+ecs_get_transform :: proc(entity: Entity) -> ^Transform_Component {
+	if ecs_has_component(entity, .TRANSFORM) {
+		return &entity_manager.transforms[entity]
+	}
+	return nil
+}
+
+// Get all entities with transform component
+ecs_get_transforms :: proc() -> map[Entity]Transform_Component {
+	return entity_manager.transforms
 }
 
 // Render transform component in inspector
-transform_render_inspector :: proc(component: ^Component) {
-	transform := cast(^Transform_Component)component
-
+transform_render_inspector :: proc(transform: ^Transform_Component) {
 	if imgui.CollapsingHeader("Transform") {
 		// Position section
 		imgui.Text("Position")
@@ -176,61 +163,5 @@ transform_render_inspector :: proc(component: ^Component) {
 		if imgui.DragFloat("##ScaleZ", &transform.scale.z, 0.1) {}
 		imgui.PopStyleColor()
 		imgui.PopItemWidth()
-	}
-}
-
-// Cleanup transform component
-transform_cleanup :: proc(component: ^Component) {
-	// Add any transform-specific cleanup logic here
-}
-
-// Component registry to store component interfaces
-component_registry: map[Component_Type]Component_Interface
-
-// Initialize the component system
-component_system_init :: proc() {
-	// Initialize component registry
-	component_registry = make(map[Component_Type]Component_Interface)
-
-	// Register transform component
-	component_registry[.TRANSFORM] = Component_Interface {
-		init             = transform_init,
-		update           = transform_update,
-		render_inspector = transform_render_inspector,
-		cleanup          = transform_cleanup,
-	}
-}
-
-// Create a new component of the specified type
-create_component :: proc(type: Component_Type, entity: Entity) -> ^Component {
-	if interface, ok := component_registry[type]; ok {
-		component := new(Component)
-		if interface.init(component, entity) {
-			return component
-		}
-		free(component)
-	}
-	return nil
-}
-
-// Update a component
-update_component :: proc(component: ^Component, delta_time: f32) {
-	if interface, ok := component_registry[component.type]; ok {
-		interface.update(component, delta_time)
-	}
-}
-
-// Render a component in the inspector
-render_component_inspector :: proc(component: ^Component) {
-	if interface, ok := component_registry[component.type]; ok {
-		interface.render_inspector(component)
-	}
-}
-
-// Cleanup a component
-cleanup_component :: proc(component: ^Component) {
-	if interface, ok := component_registry[component.type]; ok {
-		interface.cleanup(component)
-		free(component)
 	}
 }

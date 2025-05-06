@@ -65,7 +65,27 @@ render_inspector :: proc() {
 
 		// Display transform component if it exists
 		if transform := ecs_get_transform(editor.selected_entity); transform != nil {
-			render_component_inspector(cast(^Component)transform)
+			transform_render_inspector(transform)
+		}
+
+		// Display renderer component if it exists
+		if renderer := ecs_get_renderer(editor.selected_entity); renderer != nil {
+			renderer_render_inspector(renderer)
+		}
+
+		// Display camera component if it exists
+		if camera := ecs_get_camera(editor.selected_entity); camera != nil {
+			camera_render_inspector(camera)
+		}
+
+		// Display light component if it exists
+		if light := ecs_get_light(editor.selected_entity); light != nil {
+			light_render_inspector(light)
+		}
+
+		// Display script component if it exists
+		if script := ecs_get_script(editor.selected_entity); script != nil {
+			script_render_inspector(script)
 		}
 	}
 }
