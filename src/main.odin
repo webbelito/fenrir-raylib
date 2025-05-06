@@ -1,52 +1,91 @@
 package main
 
+import "core:fmt"
 import "core:log"
-import "core:os"
 import "core:strings"
 import raylib "vendor:raylib"
 
 main :: proc() {
-	// Initialize logging
+	// Initialize logging first
 	log_init()
 	defer log_shutdown()
 
-	// Initialize engine
-	engine_init()
-	defer engine_shutdown()
-
-	// Initialize scene system
-	scene_init()
-	defer scene_shutdown()
-
-	// Initialize editor (only in debug mode)
-	when ODIN_DEBUG {
-		editor_init()
+	// Create engine configuration
+	config := Engine_Config {
+		app_name            = "Fenrir Engine Demo",
+		window_width        = 1280,
+		window_height       = 720,
+		target_fps          = 60,
+		vsync               = false,
+		fullscreen          = false,
+		disable_escape_quit = true,
 	}
 
-	// Create a new scene
-	scene_new("Main Scene")
+	// Initialize raylib
+	if !init_raylib(config) {
+		log_error(.ENGINE, "Failed to initialize raylib")
+		return
+	}
 
-	// Main loop
-	for engine_should_run() {
+	// Initialize time system
+	time_init()
+
+	// Initialize engine first
+	if !engine_init(config) {
+		log_error(.ENGINE, "Failed to initialize Fenrir Engine")
+		return
+	}
+	defer engine_shutdown()
+
+	// Initialize ImGui first
+	if !imgui_init() {
+		log_error(.ENGINE, "Failed to initialize ImGui")
+		return
+	}
+	defer imgui_shutdown()
+
+	// Initialize editor
+	if !editor_init() {
+		log_error(.ENGINE, "Failed to initialize editor")
+		return
+	}
+	defer editor_shutdown()
+
+	log_info(.ENGINE, "All systems initialized successfully")
+
+	// Main game loop
+	for !raylib.WindowShouldClose() {
+		// Update time
+		time_update()
+
+		// Update engine
 		engine_update()
-
-		// Update editor (only in debug mode)
-		when ODIN_DEBUG {
-			editor_update()
-		}
-
-		// Begin drawing
-		raylib.BeginDrawing()
 
 		// Render engine
 		engine_render()
-
-		// Render editor (only in debug mode)
-		when ODIN_DEBUG {
-			editor_render()
-		}
-
-		// End drawing
-		raylib.EndDrawing()
 	}
+}
+
+// Initialize raylib with the given configuration
+init_raylib :: proc(config: Engine_Config) -> bool {
+	// Set window flags
+	raylib.SetConfigFlags({.VSYNC_HINT})
+
+	// Initialize window
+	raylib.InitWindow(
+		config.window_width,
+		config.window_height,
+		strings.clone_to_cstring(config.app_name),
+	)
+
+	// Set target FPS
+	raylib.SetTargetFPS(config.target_fps)
+
+	// Check if window was created successfully
+	if !raylib.IsWindowReady() {
+		log_error(.ENGINE, "Failed to initialize raylib window")
+		return false
+	}
+
+	return true
 }

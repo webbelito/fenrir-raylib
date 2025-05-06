@@ -4,6 +4,8 @@ package main
 
 import "base:runtime"
 
+import imgui_rl "../vendor/imgui_impl_raylib"
+import imgui "../vendor/odin-imgui"
 import "core:fmt"
 import "core:log"
 import "core:mem"
@@ -29,8 +31,10 @@ Engine_Config :: struct {
 Engine_State :: struct {
 	initialized: bool,
 	running:     bool,
+	playing:     bool, // Add playing state
 	camera:      raylib.Camera3D,
 	time:        Time_State,
+	config:      Engine_Config,
 }
 
 // Global engine state
@@ -142,22 +146,33 @@ setup_model_materials :: proc(model: ^Model, config: ^Model_Config) {
 }
 
 // Initialize the engine
-engine_init :: proc() {
+engine_init :: proc(config: Engine_Config) -> bool {
 	if engine.initialized {
 		log_warning(.ENGINE, "Engine already initialized")
-		return
+		return false
 	}
 
 	log_info(.ENGINE, "Initializing engine")
 
+	// Initialize component system
+	component_system_init()
+
 	// Initialize asset manager
 	asset_manager_init()
 
-	// Initialize window
-	raylib.InitWindow(1280, 720, "Fenrir Engine")
-	raylib.SetTargetFPS(60)
+	// Initialize scene system
+	scene_init()
 
-	// Initialize camera
+	// Create a default scene
+	scene_new("Default")
+
+	// Initialize engine state
+	engine.initialized = true
+	engine.running = true
+	engine.playing = false
+	engine.config = config
+
+	// Set up default camera
 	engine.camera = raylib.Camera3D {
 		position   = {0, 5, -10},
 		target     = {0, 0, 0},
@@ -166,13 +181,8 @@ engine_init :: proc() {
 		projection = .PERSPECTIVE,
 	}
 
-	// Initialize time
-	time_init()
-
-	engine.initialized = true
-	engine.running = true
-
 	log_info(.ENGINE, "Engine initialized successfully")
+	return true
 }
 
 // Shutdown the engine
@@ -202,7 +212,7 @@ engine_update :: proc() {
 		return
 	}
 
-	// Update time
+	// Update time first
 	time_update()
 
 	// Update camera
@@ -224,87 +234,56 @@ engine_update :: proc() {
 	if raylib.IsKeyDown(.LEFT_CONTROL) {
 		engine.camera.position.y -= 0.1
 	}
+
+	// Update editor
+	editor_update()
 }
 
 // Render the engine
 engine_render :: proc() {
-	if !engine.initialized || !engine.running {
+	if !engine.initialized {
 		return
 	}
 
+	// Start ImGui frame first
+	imgui_begin_frame()
+
+	// Begin drawing
+	raylib.BeginDrawing()
+	defer raylib.EndDrawing()
+
+	// Clear background
 	raylib.ClearBackground(raylib.BLACK)
 
-	// Get the main camera
-	main_camera := scene_get_main_camera()
-	if main_camera == 0 {
-		log_warning(.ENGINE, "No main camera found")
-		return
-	}
-
-	// Get camera component
-	camera := ecs_get_camera(main_camera)
-	if camera == nil {
-		log_warning(.ENGINE, "Main camera has no camera component")
-		return
-	}
-
-	// Get camera transform
-	camera_transform := ecs_get_transform(main_camera)
-	if camera_transform == nil {
-		log_warning(.ENGINE, "Main camera has no transform component")
-		return
-	}
-
-	// Update engine camera with scene camera
-	engine.camera.position = camera_transform.position
-	engine.camera.target = camera_transform.position + raylib.Vector3{0, 0, 1} // Look forward
-	engine.camera.up = {0, 1, 0}
-	engine.camera.fovy = camera.fov
-	engine.camera.projection = .PERSPECTIVE
-
+	// Begin 3D mode
 	raylib.BeginMode3D(engine.camera)
+	{
+		// Draw grid
+		raylib.DrawGrid(10, 1.0)
 
-	// Draw grid
-	raylib.DrawGrid(20, 1.0)
-
-	// Draw coordinate axes
-	raylib.DrawLine3D({0, 0, 0}, {10, 0, 0}, raylib.RED) // X axis
-	raylib.DrawLine3D({0, 0, 0}, {0, 10, 0}, raylib.GREEN) // Y axis
-	raylib.DrawLine3D({0, 0, 0}, {0, 0, 10}, raylib.BLUE) // Z axis
-
-	// Render scene entities
-	if scene_is_loaded() {
-		entities := scene_get_entities()
-		defer delete(entities)
-
-		for entity in entities {
-			// Get renderer component
-			renderer := ecs_get_renderer(entity)
-			if renderer == nil || !renderer.enabled || !renderer.visible {
-				continue
-			}
-
-			// Get transform component
-			transform := ecs_get_transform(entity)
-			if transform == nil || !transform.enabled {
-				continue
-			}
-
-			// Load model if needed
-			model := get_model(renderer.mesh)
-			if model == nil {
-				continue
-			}
-
-			// Render model
-			render_model(model, transform.position, transform.rotation, transform.scale)
+		// Draw all entities with transforms
+		for entity, transform in entity_manager.transforms {
+			// Draw a red cube at each entity's position
+			raylib.DrawCube(transform.position, 1, 1, 1, raylib.RED)
 		}
 	}
-
 	raylib.EndMode3D()
 
 	// Draw FPS
 	raylib.DrawFPS(10, 10)
+
+	// Draw play mode indicator
+	if engine.playing {
+		raylib.DrawText("PLAY MODE", 10, 40, 20, raylib.GREEN)
+	} else {
+		raylib.DrawText("EDIT MODE", 10, 40, 20, raylib.YELLOW)
+	}
+
+	// Render editor UI as overlay
+	editor_render()
+
+	// End ImGui frame and render
+	imgui_end_frame()
 }
 
 // Check if the engine should continue running
@@ -334,4 +313,13 @@ render_model :: proc(
 
 	// Draw model
 	raylib.DrawModel(model^, position, 1.0, raylib.WHITE)
+}
+
+// Run the engine main loop
+engine_run :: proc() {
+	// Main game loop
+	for engine_should_run() {
+		engine_update()
+		engine_render()
+	}
 }

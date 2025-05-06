@@ -5,36 +5,77 @@ import "core:log"
 import "core:math"
 import "core:mem"
 import "core:slice"
+import raylib "vendor:raylib"
 
 // Entity is just an ID
 Entity :: distinct u64
 
-// Component_Type is an enum of all component types
-Component_Type :: enum {
-	TRANSFORM,
-	RENDERER,
-	CAMERA,
-	SCRIPT,
-	LIGHT,
-	COLLIDER,
-	RIGIDBODY,
-	AUDIO_SOURCE,
-	// Add more component types as needed
+// Entity_Manager manages all entities and components
+Entity_Manager :: struct {
+	next_entity_id: Entity,
+	transforms:     map[Entity]Transform_Component,
+	renderers:      map[Entity]Renderer,
+	cameras:        map[Entity]Camera,
+	lights:         map[Entity]Light,
+	scripts:        map[Entity]Script,
+	// Add more component collections as needed
 }
 
-// Basic component interface
-Component :: struct {
-	type:    Component_Type,
-	entity:  Entity,
-	enabled: bool,
+entity_manager: Entity_Manager
+
+// Initialize the entity manager
+ecs_init :: proc() {
+	log_info(.ENGINE, "Initializing ECS system")
+
+	entity_manager.next_entity_id = 1
+	entity_manager.transforms = make(map[Entity]Transform_Component)
+	entity_manager.renderers = make(map[Entity]Renderer)
+	entity_manager.cameras = make(map[Entity]Camera)
+	entity_manager.lights = make(map[Entity]Light)
+	entity_manager.scripts = make(map[Entity]Script)
 }
 
-// Transform component
-Transform :: struct {
-	using base: Component,
-	position:   [3]f32,
-	rotation:   [3]f32,
-	scale:      [3]f32,
+// Shutdown the entity manager
+ecs_shutdown :: proc() {
+	log_info(.ENGINE, "Shutting down ECS system")
+
+	delete(entity_manager.transforms)
+	delete(entity_manager.renderers)
+	delete(entity_manager.cameras)
+	delete(entity_manager.lights)
+	delete(entity_manager.scripts)
+}
+
+// Create a new entity
+ecs_create_entity :: proc() -> Entity {
+	entity := entity_manager.next_entity_id
+	entity_manager.next_entity_id += 1
+	return entity
+}
+
+// Destroy an entity and all its components
+ecs_destroy_entity :: proc(entity: Entity) {
+	delete_key(&entity_manager.transforms, entity)
+	delete_key(&entity_manager.renderers, entity)
+	delete_key(&entity_manager.cameras, entity)
+	delete_key(&entity_manager.lights, entity)
+	delete_key(&entity_manager.scripts, entity)
+}
+
+// Add a transform component to an entity
+ecs_add_transform :: proc(
+	entity: Entity,
+	position, rotation, scale: raylib.Vector3,
+) -> ^Transform_Component {
+	transform := Transform_Component {
+		_base = Component{type = .TRANSFORM, entity = entity, enabled = true},
+		position = position,
+		rotation = rotation,
+		scale = scale,
+	}
+
+	entity_manager.transforms[entity] = transform
+	return &entity_manager.transforms[entity]
 }
 
 // Renderer component
@@ -78,69 +119,12 @@ Script :: struct {
 	// In a real implementation, this would have references to script instances
 }
 
-// Entity_Manager manages all entities and components
-Entity_Manager :: struct {
-	next_entity_id: Entity,
-	transforms:     map[Entity]Transform,
-	renderers:      map[Entity]Renderer,
-	cameras:        map[Entity]Camera,
-	lights:         map[Entity]Light,
-	scripts:        map[Entity]Script,
-	// Add more component collections as needed
-}
-
-entity_manager: Entity_Manager
-
-// Initialize the entity manager
-ecs_init :: proc() {
-	log_info(.ENGINE, "Initializing ECS system")
-
-	entity_manager.next_entity_id = 1
-	entity_manager.transforms = make(map[Entity]Transform)
-	entity_manager.renderers = make(map[Entity]Renderer)
-	entity_manager.cameras = make(map[Entity]Camera)
-	entity_manager.lights = make(map[Entity]Light)
-	entity_manager.scripts = make(map[Entity]Script)
-}
-
-// Shutdown the entity manager
-ecs_shutdown :: proc() {
-	log_info(.ENGINE, "Shutting down ECS system")
-
-	delete(entity_manager.transforms)
-	delete(entity_manager.renderers)
-	delete(entity_manager.cameras)
-	delete(entity_manager.lights)
-	delete(entity_manager.scripts)
-}
-
-// Create a new entity
-ecs_create_entity :: proc() -> Entity {
-	entity := entity_manager.next_entity_id
-	entity_manager.next_entity_id += 1
-	return entity
-}
-
-// Destroy an entity and all its components
-ecs_destroy_entity :: proc(entity: Entity) {
-	delete_key(&entity_manager.transforms, entity)
-	delete_key(&entity_manager.renderers, entity)
-	delete_key(&entity_manager.cameras, entity)
-	delete_key(&entity_manager.lights, entity)
-	delete_key(&entity_manager.scripts, entity)
-}
-
-// Add a transform component to an entity
-ecs_add_transform :: proc(entity: Entity, position, rotation, scale: [3]f32) -> ^Transform {
-	transform := Transform {
-		base = Component{type = .TRANSFORM, entity = entity, enabled = true},
-		position = position,
-		rotation = rotation,
-		scale = scale,
+// Get a transform component from an entity
+ecs_get_transform :: proc(entity: Entity) -> ^Transform_Component {
+	if transform, ok := &entity_manager.transforms[entity]; ok {
+		return transform
 	}
-
-	entity_manager.transforms[entity] = transform
-	return &entity_manager.transforms[entity]
+	return nil
 }
 
 // Add a renderer component to an entity
@@ -188,14 +172,6 @@ ecs_add_light :: proc(
 
 	entity_manager.lights[entity] = light
 	return &entity_manager.lights[entity]
-}
-
-// Get a transform component from an entity
-ecs_get_transform :: proc(entity: Entity) -> ^Transform {
-	if transform, ok := &entity_manager.transforms[entity]; ok {
-		return transform
-	}
-	return nil
 }
 
 // Get a renderer component from an entity
@@ -298,7 +274,7 @@ ecs_get_entities_with_components :: proc(
 ecs_add_component :: proc(entity: Entity, component: ^Component) {
 	switch component.type {
 	case .TRANSFORM:
-		entity_manager.transforms[entity] = (cast(^Transform)component)^
+		entity_manager.transforms[entity] = (cast(^Transform_Component)component)^
 	case .RENDERER:
 		entity_manager.renderers[entity] = (cast(^Renderer)component)^
 	case .CAMERA:
@@ -311,4 +287,18 @@ ecs_add_component :: proc(entity: Entity, component: ^Component) {
 		// These components are not yet implemented
 		break
 	}
+}
+
+// Get all entities with renderer components
+ecs_get_renderers :: proc() -> map[Entity]^Renderer {
+	renderers := make(map[Entity]^Renderer)
+	for entity in 1 ..< entity_manager.next_entity_id {
+		if ecs_has_component(entity, .RENDERER) {
+			renderer := ecs_get_renderer(entity)
+			if renderer != nil {
+				renderers[entity] = renderer
+			}
+		}
+	}
+	return renderers
 }
