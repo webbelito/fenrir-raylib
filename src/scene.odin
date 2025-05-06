@@ -470,6 +470,9 @@ scene_unload :: proc() {
 	current_scene.path = ""
 	current_scene.loaded = false
 	current_scene.dirty = false
+
+	// Reset entity manager
+	entity_manager.next_entity_id = 1
 }
 
 // Add an entity to the current scene
