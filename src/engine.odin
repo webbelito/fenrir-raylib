@@ -154,6 +154,9 @@ engine_init :: proc(config: Engine_Config) -> bool {
 
 	log_info(.ENGINE, "Initializing engine")
 
+	// Initialize component system
+	component_system_init()
+
 	// Initialize asset manager
 	asset_manager_init()
 

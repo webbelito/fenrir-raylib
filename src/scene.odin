@@ -362,14 +362,12 @@ create_ambulance_entity :: proc() -> Entity {
 	entity := ecs_create_entity()
 
 	// Add transform component
-	transform := new(Transform)
-	transform^ = Transform {
-		type     = .TRANSFORM,
-		entity   = entity,
-		enabled  = true,
+	transform := new(Transform_Component)
+	transform^ = Transform_Component {
+		_base = Component{type = .TRANSFORM, entity = entity, enabled = true},
 		position = {0, 0, 0},
 		rotation = {0, 0, 0},
-		scale    = {1, 1, 1},
+		scale = {1, 1, 1},
 	}
 	ecs_add_component(entity, cast(^Component)transform)
 
@@ -445,4 +443,18 @@ scene_get_camera :: proc() -> raylib.Camera3D {
 		fovy = camera.fov,
 		projection = .PERSPECTIVE,
 	}
+}
+
+// Create a new entity with a transform component
+create_entity :: proc(position, rotation, scale: raylib.Vector3) -> Entity {
+	entity := ecs_create_entity()
+	transform := new(Transform_Component)
+	transform^ = Transform_Component {
+		_base = Component{type = .TRANSFORM, entity = entity, enabled = true},
+		position = position,
+		rotation = rotation,
+		scale = scale,
+	}
+	ecs_add_component(entity, cast(^Component)transform)
+	return entity
 }
