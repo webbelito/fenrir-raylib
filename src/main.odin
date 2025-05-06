@@ -5,30 +5,6 @@ import "core:log"
 import "core:strings"
 import raylib "vendor:raylib"
 
-// Initialize raylib with the given configuration
-init_raylib :: proc(config: Engine_Config) -> bool {
-	// Set window flags
-	raylib.SetConfigFlags({.VSYNC_HINT})
-
-	// Initialize window
-	raylib.InitWindow(
-		config.window_width,
-		config.window_height,
-		strings.clone_to_cstring(config.app_name),
-	)
-
-	// Set target FPS
-	raylib.SetTargetFPS(config.target_fps)
-
-	// Check if window was created successfully
-	if !raylib.IsWindowReady() {
-		log_error(.ENGINE, "Failed to initialize raylib window")
-		return false
-	}
-
-	return true
-}
-
 main :: proc() {
 	// Initialize logging first
 	log_init()
@@ -78,4 +54,28 @@ main :: proc() {
 		log_error(.ENGINE, "Failed to initialize Fenrir Engine")
 	}
 	defer engine_shutdown()
+}
+
+// Initialize raylib with the given configuration
+init_raylib :: proc(config: Engine_Config) -> bool {
+	// Set window flags
+	raylib.SetConfigFlags({.VSYNC_HINT})
+
+	// Initialize window
+	raylib.InitWindow(
+		config.window_width,
+		config.window_height,
+		strings.clone_to_cstring(config.app_name),
+	)
+
+	// Set target FPS
+	raylib.SetTargetFPS(config.target_fps)
+
+	// Check if window was created successfully
+	if !raylib.IsWindowReady() {
+		log_error(.ENGINE, "Failed to initialize raylib window")
+		return false
+	}
+
+	return true
 }
