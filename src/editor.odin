@@ -6,6 +6,7 @@ import imgui "../vendor/odin-imgui"
 import "core:fmt"
 import "core:log"
 import "core:os"
+import "core:path/filepath"
 import "core:strconv"
 import "core:strings"
 import raylib "vendor:raylib"
@@ -16,6 +17,7 @@ Editor_State :: struct {
 	selected_entity: Entity,
 	scene_tree_open: bool,
 	inspector_open:  bool,
+	scene_path:      string,
 }
 
 editor: Editor_State
@@ -30,6 +32,7 @@ editor_init :: proc() -> bool {
 		initialized     = true,
 		scene_tree_open = true,
 		inspector_open  = true,
+		scene_path      = "",
 	}
 
 	log_info(.ENGINE, "Editor initialized")
@@ -94,6 +97,132 @@ render_inspector :: proc() {
 editor_render :: proc() {
 	if !editor.initialized {
 		return
+	}
+
+	// Main menu bar
+	if imgui.BeginMainMenuBar() {
+		// File menu
+		if imgui.BeginMenu("File") {
+			if imgui.MenuItem("New Scene", "Ctrl+N") {
+				// Create new scene
+				scene_new("New Scene")
+				editor.scene_path = ""
+			}
+			if imgui.MenuItem("Open Scene", "Ctrl+O") {
+				// TODO: Open file dialog
+				path := "assets/scenes/test.json"
+				log_info(.ENGINE, "Attempting to open scene: %s", path)
+				if scene_load(path) {
+					editor.scene_path = path
+					log_info(.ENGINE, "Successfully opened scene: %s", path)
+				} else {
+					log_error(.ENGINE, "Failed to open scene: %s", path)
+				}
+			}
+			if imgui.MenuItem("Save Scene", "Ctrl+S") {
+				if editor.scene_path == "" {
+					// TODO: Save file dialog
+					editor.scene_path = "assets/scenes/test.json"
+				}
+				scene_save(editor.scene_path)
+			}
+			if imgui.MenuItem("Save Scene As...", "Ctrl+Shift+S") {
+				// TODO: Save file dialog
+				path := "assets/scenes/test.json"
+				if scene_save(path) {
+					editor.scene_path = path
+				}
+			}
+			imgui.Separator()
+			if imgui.MenuItem("Exit", "Alt+F4") {
+				// TODO: Handle exit
+			}
+			imgui.EndMenu()
+		}
+
+		// Edit menu
+		if imgui.BeginMenu("Edit") {
+			if imgui.MenuItem("Undo", "Ctrl+Z") {
+				// TODO: Implement undo
+			}
+			if imgui.MenuItem("Redo", "Ctrl+Y") {
+				// TODO: Implement redo
+			}
+			imgui.EndMenu()
+		}
+
+		// Entity menu
+		if imgui.BeginMenu("Entity") {
+			if imgui.MenuItem("Add Empty", "Ctrl+Shift+N") {
+				entity := create_entity(0, 0, 0)
+				append(&current_scene.entities, entity)
+				editor.selected_entity = entity
+			}
+			if imgui.BeginMenu("3D Object") {
+				if imgui.MenuItem("Cube") {
+					entity := create_entity(0, 0, 0)
+					transform := ecs_add_transform(entity)
+					renderer := ecs_add_renderer(entity)
+					if renderer != nil {
+						renderer.mesh = "cube"
+						renderer.material = "default"
+					}
+					append(&current_scene.entities, entity)
+					editor.selected_entity = entity
+				}
+				if imgui.MenuItem("Sphere") {
+					entity := create_entity(0, 0, 0)
+					transform := ecs_add_transform(entity)
+					renderer := ecs_add_renderer(entity)
+					if renderer != nil {
+						renderer.mesh = "sphere"
+						renderer.material = "default"
+					}
+					append(&current_scene.entities, entity)
+					editor.selected_entity = entity
+				}
+				imgui.EndMenu()
+			}
+			if imgui.BeginMenu("Light") {
+				if imgui.MenuItem("Directional Light") {
+					entity := create_entity(0, 0, 0)
+					transform := ecs_add_transform(entity)
+					light := ecs_add_light(entity, .DIRECTIONAL)
+					append(&current_scene.entities, entity)
+					editor.selected_entity = entity
+				}
+				if imgui.MenuItem("Point Light") {
+					entity := create_entity(0, 0, 0)
+					transform := ecs_add_transform(entity)
+					light := ecs_add_light(entity, .POINT)
+					append(&current_scene.entities, entity)
+					editor.selected_entity = entity
+				}
+				if imgui.MenuItem("Spot Light") {
+					entity := create_entity(0, 0, 0)
+					transform := ecs_add_transform(entity)
+					light := ecs_add_light(entity, .SPOT)
+					append(&current_scene.entities, entity)
+					editor.selected_entity = entity
+				}
+				imgui.EndMenu()
+			}
+			if imgui.MenuItem("Camera") {
+				entity := create_entity(0, 0, 0)
+				transform := ecs_add_transform(entity)
+				camera := ecs_add_camera(entity)
+				append(&current_scene.entities, entity)
+				editor.selected_entity = entity
+			}
+			imgui.Separator()
+			if imgui.MenuItem("Delete Selected", "Delete") {
+				if editor.selected_entity != 0 {
+					// TODO: Implement entity deletion
+				}
+			}
+			imgui.EndMenu()
+		}
+		imgui.EndMainMenuBar()
 	}
 
 	// Get the main window size
