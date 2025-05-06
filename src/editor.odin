@@ -69,23 +69,38 @@ render_inspector :: proc() {
 				// Position section
 				imgui.Text("Position")
 				imgui.PushItemWidth(60) // Set width for input fields
+
+				// X input
+				imgui.AlignTextToFramePadding()
 				imgui.PushStyleColor(imgui.Col.Text, 0xFF0000FF) // Red
 				imgui.Text("X")
 				imgui.PopStyleColor()
 				imgui.SameLine()
-				if imgui.InputFloat("##PosX", &transform.position.x) {}
+				imgui.PushStyleColor(imgui.Col.FrameBg, 0x330000FF) // Red with alpha
+				if imgui.DragFloat("##PosX", &transform.position.x, 0.1) {}
+				imgui.PopStyleColor()
+
+				// Y input
 				imgui.SameLine()
+				imgui.AlignTextToFramePadding()
 				imgui.PushStyleColor(imgui.Col.Text, 0xFF00FF00) // Green
 				imgui.Text("Y")
 				imgui.PopStyleColor()
 				imgui.SameLine()
-				if imgui.InputFloat("##PosY", &transform.position.y) {}
+				imgui.PushStyleColor(imgui.Col.FrameBg, 0x3300FF00) // Green with alpha
+				if imgui.DragFloat("##PosY", &transform.position.y, 0.1) {}
+				imgui.PopStyleColor()
+
+				// Z input
 				imgui.SameLine()
+				imgui.AlignTextToFramePadding()
 				imgui.PushStyleColor(imgui.Col.Text, 0xFFFF0000) // Blue
 				imgui.Text("Z")
 				imgui.PopStyleColor()
 				imgui.SameLine()
-				if imgui.InputFloat("##PosZ", &transform.position.z) {}
+				imgui.PushStyleColor(imgui.Col.FrameBg, 0x33FF0000) // Blue with alpha
+				if imgui.DragFloat("##PosZ", &transform.position.z, 0.1) {}
+				imgui.PopStyleColor()
 				imgui.PopItemWidth()
 
 				imgui.Separator()
@@ -93,23 +108,38 @@ render_inspector :: proc() {
 				// Rotation section
 				imgui.Text("Rotation")
 				imgui.PushItemWidth(60) // Set width for input fields
+
+				// X input
+				imgui.AlignTextToFramePadding()
 				imgui.PushStyleColor(imgui.Col.Text, 0xFF0000FF) // Red
 				imgui.Text("X")
 				imgui.PopStyleColor()
 				imgui.SameLine()
-				if imgui.InputFloat("##RotX", &transform.rotation.x) {}
+				imgui.PushStyleColor(imgui.Col.FrameBg, 0x330000FF) // Red with alpha
+				if imgui.DragFloat("##RotX", &transform.rotation.x, 0.1) {}
+				imgui.PopStyleColor()
+
+				// Y input
 				imgui.SameLine()
+				imgui.AlignTextToFramePadding()
 				imgui.PushStyleColor(imgui.Col.Text, 0xFF00FF00) // Green
 				imgui.Text("Y")
 				imgui.PopStyleColor()
 				imgui.SameLine()
-				if imgui.InputFloat("##RotY", &transform.rotation.y) {}
+				imgui.PushStyleColor(imgui.Col.FrameBg, 0x3300FF00) // Green with alpha
+				if imgui.DragFloat("##RotY", &transform.rotation.y, 0.1) {}
+				imgui.PopStyleColor()
+
+				// Z input
 				imgui.SameLine()
+				imgui.AlignTextToFramePadding()
 				imgui.PushStyleColor(imgui.Col.Text, 0xFFFF0000) // Blue
 				imgui.Text("Z")
 				imgui.PopStyleColor()
 				imgui.SameLine()
-				if imgui.InputFloat("##RotZ", &transform.rotation.z) {}
+				imgui.PushStyleColor(imgui.Col.FrameBg, 0x33FF0000) // Blue with alpha
+				if imgui.DragFloat("##RotZ", &transform.rotation.z, 0.1) {}
+				imgui.PopStyleColor()
 				imgui.PopItemWidth()
 
 				imgui.Separator()
@@ -117,23 +147,38 @@ render_inspector :: proc() {
 				// Scale section
 				imgui.Text("Scale")
 				imgui.PushItemWidth(60) // Set width for input fields
+
+				// X input
+				imgui.AlignTextToFramePadding()
 				imgui.PushStyleColor(imgui.Col.Text, 0xFF0000FF) // Red
 				imgui.Text("X")
 				imgui.PopStyleColor()
 				imgui.SameLine()
-				if imgui.InputFloat("##ScaleX", &transform.scale.x) {}
+				imgui.PushStyleColor(imgui.Col.FrameBg, 0x330000FF) // Red with alpha
+				if imgui.DragFloat("##ScaleX", &transform.scale.x, 0.1) {}
+				imgui.PopStyleColor()
+
+				// Y input
 				imgui.SameLine()
+				imgui.AlignTextToFramePadding()
 				imgui.PushStyleColor(imgui.Col.Text, 0xFF00FF00) // Green
 				imgui.Text("Y")
 				imgui.PopStyleColor()
 				imgui.SameLine()
-				if imgui.InputFloat("##ScaleY", &transform.scale.y) {}
+				imgui.PushStyleColor(imgui.Col.FrameBg, 0x3300FF00) // Green with alpha
+				if imgui.DragFloat("##ScaleY", &transform.scale.y, 0.1) {}
+				imgui.PopStyleColor()
+
+				// Z input
 				imgui.SameLine()
+				imgui.AlignTextToFramePadding()
 				imgui.PushStyleColor(imgui.Col.Text, 0xFFFF0000) // Blue
 				imgui.Text("Z")
 				imgui.PopStyleColor()
 				imgui.SameLine()
-				if imgui.InputFloat("##ScaleZ", &transform.scale.z) {}
+				imgui.PushStyleColor(imgui.Col.FrameBg, 0x33FF0000) // Blue with alpha
+				if imgui.DragFloat("##ScaleZ", &transform.scale.z, 0.1) {}
+				imgui.PopStyleColor()
 				imgui.PopItemWidth()
 			}
 		}
