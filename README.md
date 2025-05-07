@@ -78,6 +78,22 @@ Run the engine in debug mode to access the editor interface:
 
 This project uses the [raylib-imgui-odin-template](https://github.com/Georgefwm/raylib-imgui-odin-template) as a foundation for ImGui integration with Raylib in Odin. The template provided the initial setup and implementation for the editor interface.
 
+### Fresh installation using this template requires to do the folloring.
+
+```bash
+git submodule deinit -f vendor/odin-imgui
+git rm -f vendor/odin-imgui
+rm -rf .git/modules/vendor/odin-imgui
+git submodule add https://gitlab.com/L-4/odin-imgui.git vendor/odin-imgui
+git submodule update --init --recursive
+```
+
+Building L4's odin-imgui is entirely automated, using build.py. All platforms should work (not not: open an issue!), but currently Mac backends are untested as I don't have a Mac (help wanted!)
+
+- dear_bindings depends on a library called "ply". link. You can probably install this with python -m pip install ply
+- Windows depends on that vcvarsall.bat is in your path.
+- Run python build.py
+
 ## License
 
 MIT License
