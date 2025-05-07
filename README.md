@@ -1,192 +1,83 @@
-# Fenrir Game Engine
+# Fenrir Engine
 
-A lightweight 3D game engine built with Odin and Raylib, featuring an ECS (Entity Component System) architecture and an ImGui-based editor.
+A 3D game engine built with Odin and Raylib, featuring a custom ECS (Entity Component System) architecture.
+
+## Features
+
+- **ECS Architecture**: Custom Entity Component System for efficient game object management
+- **3D Rendering**: Powered by Raylib for high-performance 3D graphics
+- **Scene Management**: Save and load scenes in JSON format
+- **Editor Interface**: Built-in editor with ImGui integration
+  - Scene Tree view
+  - Inspector panel
+  - File browser for scene management
+  - Entity creation and manipulation
+  - Component editing
 
 ## Project Structure
 
 ```
-src/
-├── main.odin           # Entry point and main loop
-├── engine.odin         # Core engine functionality
-├── ecs.odin           # Entity Component System implementation
-├── component.odin     # Base component system and interfaces
-├── scene.odin         # Scene management
-├── editor.odin        # ImGui-based editor
-├── imgui.odin         # ImGui wrapper
-├── time.odin          # Time management
-├── asset_manager.odin # Asset loading and management
-├── log.odin           # Logging system
-└── components/        # Component implementations
-    └── transform.odin # Transform component
+fenrir-raylib/
+├── src/
+│   ├── editor.odin        # Editor UI and scene management
+│   ├── engine.odin        # Core engine systems
+│   ├── scene.odin         # Scene management and serialization
+│   ├── component_manager.odin  # Component system management
+│   ├── entity_manager.odin     # Entity system management
+│   ├── component_*.odin   # Individual component implementations
+│   ├── main.odin          # Entry point
+│   ├── log.odin           # Logging system
+│   ├── time.odin          # Time management
+│   ├── imgui.odin         # ImGui integration
+│   └── asset_manager.odin # Asset management
+├── assets/
+│   └── scenes/            # Scene files
+└── vendor/                # Third-party dependencies
 ```
 
-## Core Systems
+## Components
 
-### Entity Component System (ECS)
-- Entity: A unique identifier (u64)
-- Component: Data attached to entities
-- System: Logic that operates on components
+The engine includes several built-in components:
+- Transform: Position, rotation, and scale
+- Renderer: Mesh and material rendering
+- Camera: View and projection settings
+- Light: Various light types (Directional, Point, Spot)
+- Script: Custom behavior scripting
 
-### Scene Management
-- Scene loading/saving
-- Entity management
-- Camera and lighting setup
+## Building
 
-### Editor
-- ImGui-based interface
-- Scene hierarchy
-- Component inspector
-- Real-time editing
-
-## How to Implement a New Component
-
-### 1. Define Component Type
-Add your component type to the `Component_Type` enum in `component.odin`:
-```odin
-Component_Type :: enum {
-    TRANSFORM,
-    RENDERER,
-    CAMERA,
-    SCRIPT,
-    LIGHT,
-    COLLIDER,
-    RIGIDBODY,
-    AUDIO_SOURCE,
-    YOUR_NEW_COMPONENT, // Add your component type here
-}
+1. Install Odin compiler
+2. Install Raylib
+3. Clone the repository
+4. Build with Odin:
+```bash
+odin build src -out:fenrir
 ```
 
-### 2. Create Component Structure
-Create a new file in the `components` directory (e.g., `components/your_component.odin`):
-```odin
-package main
+## Usage
 
-import "core:fmt"
-import imgui "../vendor/odin-imgui"
-import raylib "vendor:raylib"
-
-// Your component structure
-Your_Component :: struct {
-    using _base: Component,
-    // Add your component data here
-    some_value: f32,
-    another_value: raylib.Vector3,
-}
-
-// Initialize your component
-your_component_init :: proc(component: ^Component, entity: Entity) -> bool {
-    your_component := cast(^Your_Component)component
-    your_component.type = .YOUR_NEW_COMPONENT
-    your_component.entity = entity
-    // Initialize your component data
-    your_component.some_value = 0.0
-    your_component.another_value = {0, 0, 0}
-    return true
-}
-
-// Update your component
-your_component_update :: proc(component: ^Component, delta_time: f32) {
-    // Add update logic here
-}
-
-// Render your component in the inspector
-your_component_render_inspector :: proc(component: ^Component) {
-    your_component := cast(^Your_Component)component
-    
-    if imgui.CollapsingHeader("Your Component") {
-        // Add ImGui controls for your component
-        imgui.DragFloat("Some Value", &your_component.some_value, 0.1)
-        // Add more controls as needed
-    }
-}
-
-// Cleanup your component
-your_component_cleanup :: proc(component: ^Component) {
-    // Add cleanup logic here
-}
-
-// Register your component
-your_component_register :: proc() {
-    component_registry[.YOUR_NEW_COMPONENT] = Component_Interface{
-        init = your_component_init,
-        update = your_component_update,
-        render_inspector = your_component_render_inspector,
-        cleanup = your_component_cleanup,
-    }
-}
+Run the engine in debug mode to access the editor interface:
+```bash
+./fenrir
 ```
 
-### 3. Register Your Component
-Add your component registration to `component_system_init` in `component.odin`:
-```odin
-component_system_init :: proc() {
-    // Initialize component registry
-    component_registry = make(map[Component_Type]Component_Interface)
+### Editor Controls
+- File Menu: New, Open, Save scenes
+- Entity Menu: Create new entities and components
+- Window Menu: Toggle Scene Tree and Inspector panels
+- Scene Tree: View and select entities
+- Inspector: Edit component properties
 
-    // Register existing components
-    component_registry[.TRANSFORM] = Component_Interface{...}
-    
-    // Register your new component
-    your_component_register()
-}
-```
+## Dependencies
 
-### 4. Add ECS Support
-Add your component to the `Entity_Manager` in `ecs.odin`:
-```odin
-Entity_Manager :: struct {
-    next_entity_id: Entity,
-    transforms: map[Entity]Transform_Component,
-    // Add your component map
-    your_components: map[Entity]Your_Component,
-}
+- Odin Programming Language
+- Raylib
+- ImGui (included in vendor directory)
 
-// Add initialization in ecs_init
-ecs_init :: proc() {
-    entity_manager.your_components = make(map[Entity]Your_Component)
-}
+## Credits
 
-// Add cleanup in ecs_shutdown
-ecs_shutdown :: proc() {
-    delete(entity_manager.your_components)
-}
+This project uses the [raylib-imgui-odin-template](https://github.com/Georgefwm/raylib-imgui-odin-template) as a foundation for ImGui integration with Raylib in Odin. The template provided the initial setup and implementation for the editor interface.
 
-// Add helper functions
-ecs_add_your_component :: proc(entity: Entity, /* parameters */) -> ^Your_Component {
-    component := Your_Component{
-        _base = Component{type = .YOUR_NEW_COMPONENT, entity = entity, enabled = true},
-        // Initialize your component data
-    }
-    entity_manager.your_components[entity] = component
-    return &entity_manager.your_components[entity]
-}
+## License
 
-ecs_get_your_component :: proc(entity: Entity) -> ^Your_Component {
-    if component, ok := &entity_manager.your_components[entity]; ok {
-        return component
-    }
-    return nil
-}
-```
-
-### 5. Using Your Component
-```odin
-// Create an entity with your component
-entity := ecs_create_entity()
-your_component := ecs_add_your_component(entity)
-
-// Get and modify your component
-if component := ecs_get_your_component(entity); component != nil {
-    component.some_value = 42.0
-}
-```
-
-## Best Practices
-1. Keep components focused on a single responsibility
-2. Use the component registry for initialization and cleanup
-3. Implement proper inspector UI for editing component values
-4. Handle component dependencies appropriately
-5. Clean up resources in the cleanup procedure
-
-## Contributing
-Feel free to submit issues and enhancement requests! 
+MIT License
