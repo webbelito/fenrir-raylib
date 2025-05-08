@@ -601,7 +601,7 @@ editor_render :: proc() {
 			if imgui.MenuItem("Camera") {
 				entity := create_entity(0, 0, 0)
 				transform := ecs_add_transform(entity)
-				camera := ecs_add_camera(entity)
+				camera := ecs_add_camera(entity, 45.0, 0.1, 1000.0, true) // Set as main camera
 				append(&current_scene.entities, entity)
 				editor.selected_entity = entity
 			}

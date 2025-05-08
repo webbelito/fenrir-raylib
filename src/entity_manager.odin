@@ -173,3 +173,35 @@ ecs_remove_component :: proc(entity: Entity, component_type: Component_Type) {
 	// Unknown component type
 	}
 }
+
+// Get all components for an entity
+ecs_get_components :: proc(entity: Entity, allocator := context.allocator) -> []^Component {
+	components: [dynamic]^Component
+
+	// Get transform component
+	if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
+		append(&components, transform)
+	}
+
+	// Get renderer component
+	if renderer := ecs_get_component(entity, .RENDERER); renderer != nil {
+		append(&components, renderer)
+	}
+
+	// Get camera component
+	if camera := ecs_get_component(entity, .CAMERA); camera != nil {
+		append(&components, camera)
+	}
+
+	// Get light component
+	if light := ecs_get_component(entity, .LIGHT); light != nil {
+		append(&components, light)
+	}
+
+	// Get script component
+	if script := ecs_get_component(entity, .SCRIPT); script != nil {
+		append(&components, script)
+	}
+
+	return slice.clone(components[:])
+}

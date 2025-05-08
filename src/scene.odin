@@ -3,6 +3,7 @@ package main
 import "core:encoding/json"
 import "core:fmt"
 import "core:log"
+import "core:math"
 import "core:os"
 import "core:path/filepath"
 import "core:slice"
@@ -164,43 +165,73 @@ scene_scan_available_scenes :: proc() {
 	log_info(.ENGINE, "Found %d scene(s)", len(available_scenes))
 }
 
+// Clean up the current scene
+scene_cleanup :: proc() {
+	if !current_scene.loaded {
+		return
+	}
+
+	// Clean up entities
+	for entity in current_scene.entities {
+		ecs_destroy_entity(entity)
+	}
+	clear(&current_scene.entities)
+
+	// Clean up nodes
+	for _, node in current_scene.nodes {
+		delete(node.name)
+		delete(node.children)
+	}
+	clear(&current_scene.nodes)
+
+	current_scene.loaded = false
+	current_scene.dirty = false
+}
+
 // Create a new scene
 scene_new :: proc(name: string) -> bool {
-	log_info(.ENGINE, "Creating new scene: %s", name)
-
-	if current_scene.loaded && current_scene.dirty {
-		log_warning(.ENGINE, "Current scene has unsaved changes")
-		return false
-	}
-
-	// Unload current scene if loaded
 	if current_scene.loaded {
-		scene_unload()
+		scene_cleanup()
 	}
 
-	// Initialize new scene
-	current_scene.name = strings.clone(name)
-	current_scene.path = ""
-	current_scene.loaded = true
-	current_scene.dirty = true
-	current_scene.nodes = make(map[Entity]Node)
-	current_scene.entities = make([dynamic]Entity)
+	current_scene = Scene {
+		name     = name,
+		path     = "",
+		nodes    = make(map[Entity]Node),
+		entities = make([dynamic]Entity),
+		loaded   = true,
+		dirty    = true,
+	}
 
-	// Create root node (always entity ID 0)
-	current_scene.root_id = 0
+	// Create root node
 	root_node := Node {
 		id        = 0,
 		name      = "Root",
-		parent_id = 0, // Root is its own parent
+		parent_id = 0,
 		children  = make([dynamic]Entity),
-		expanded  = true, // Root node starts expanded
+		expanded  = true,
 	}
 	current_scene.nodes[0] = root_node
+	current_scene.root_id = 0
 
-	// Add root to entities list
-	append(&current_scene.entities, 0)
+	// Create default camera
+	camera_entity := create_entity({0, 5, -10}, {0, 0, 0}, {1, 1, 1})
+	camera := ecs_add_camera(camera_entity, 45.0, 0.1, 1000.0, true) // Set as main camera
+	append(&current_scene.entities, camera_entity)
 
-	log_info(.ENGINE, "Created root node with ID: %d", current_scene.root_id)
+	// Create a node for the camera
+	camera_node := Node {
+		id        = camera_entity,
+		name      = "Main Camera",
+		parent_id = 0, // Parent to root
+		children  = make([dynamic]Entity),
+		expanded  = true,
+	}
+	current_scene.nodes[camera_entity] = camera_node
+	append(&root_node.children, camera_entity)
+	current_scene.nodes[0] = root_node
+
+	log_info(.ENGINE, "Created new scene: %s", name)
 	return true
 }
 
@@ -265,10 +296,33 @@ create_node :: proc(name: string, parent_id: Entity = 0) -> Entity {
 	}
 	log_info(.ENGINE, "Added transform component")
 
-	// Add to scene entities
+	// Create a simple cube mesh
+	cube := raylib.GenMeshCube(1.0, 1.0, 1.0)
+	model_ptr := new(raylib.Model)
+	model_ptr^ = raylib.LoadModelFromMesh(cube)
+	model_ptr.materials[0].maps[0].color = raylib.RED
+
+	// Create a unique key for this node's cube
+	cube_key := fmt.tprintf("cube_%d", entity)
+
+	// Add renderer component with the cube
+	renderer := new(Renderer)
+	renderer^ = Renderer {
+		_base = Component{type = .RENDERER, entity = entity, enabled = true},
+		model_type = .CUBE, // Set the model type to cube
+		mesh = cube_key, // Use the unique key
+		material = "", // No material needed for the simple cube
+		visible = true,
+	}
+	ecs_add_component(entity, cast(^Component)renderer)
+
+	// Store the model in the asset cache with the unique key
+	asset_system.model_cache[cube_key] = model_ptr
+
+	// Add to scene entities for rendering
 	append(&current_scene.entities, entity)
 	current_scene.dirty = true
-	log_info(.ENGINE, "Added entity to scene entities list")
+	log_info(.ENGINE, "Node created successfully")
 
 	return entity
 }
@@ -770,7 +824,7 @@ create_ambulance_entity :: proc() -> Entity {
 		entity   = entity,
 		enabled  = true,
 		mesh     = "assets/meshes/ambulance.glb",
-		material = "assets/meshes/Textures/colormap.png", // Use GLB's expected path
+		material = "assets/meshes/Textures/colormap.png",
 		visible  = true,
 	}
 	ecs_add_component(entity, cast(^Component)renderer)
@@ -801,12 +855,19 @@ scene_get_camera :: proc() -> raylib.Camera3D {
 		return raylib.Camera3D{}
 	}
 
+	// Calculate forward direction based on rotation
+	forward := raylib.Vector3 {
+		math.sin(transform.rotation.y) * math.cos(transform.rotation.x),
+		-math.sin(transform.rotation.x),
+		math.cos(transform.rotation.y) * math.cos(transform.rotation.x),
+	}
+
 	// Create and return camera
 	return raylib.Camera3D {
-		position = transform.position,
-		target = {transform.position.x, transform.position.y, transform.position.z - 1},
-		up = {0, 1, 0},
-		fovy = camera.fov,
+		position   = transform.position,
+		target     = transform.position + forward * 10.0, // Look 10 units ahead
+		up         = {0, 1, 0},
+		fovy       = camera.fov,
 		projection = .PERSPECTIVE,
 	}
 }
@@ -1040,4 +1101,137 @@ load_scene :: proc(path: string) -> ^Scene {
 	}
 
 	return scene
+}
+
+// Update the scene
+scene_update :: proc() {
+	if !current_scene.loaded {
+		return
+	}
+
+	// Update all entities in the scene
+	for entity in current_scene.entities {
+		// Get all components for this entity
+		components := ecs_get_components(entity)
+		defer delete(components)
+
+		// Update each component
+		for component in components {
+			update_component(component, get_delta_time())
+		}
+	}
+}
+
+// Render the scene
+scene_render :: proc() {
+	if !current_scene.loaded {
+		return
+	}
+
+	// Draw grid
+	grid_size := 20
+	grid_spacing := 1.0
+	grid_color := raylib.DARKGRAY
+
+	// Draw grid lines
+	for i := -grid_size; i <= grid_size; i += 1 {
+		// X-axis lines
+		raylib.DrawLine3D(
+			{cast(f32)i * cast(f32)grid_spacing, 0, -cast(f32)grid_size * cast(f32)grid_spacing},
+			{cast(f32)i * cast(f32)grid_spacing, 0, cast(f32)grid_size * cast(f32)grid_spacing},
+			grid_color,
+		)
+		// Z-axis lines
+		raylib.DrawLine3D(
+			{-cast(f32)grid_size * cast(f32)grid_spacing, 0, cast(f32)i * cast(f32)grid_spacing},
+			{cast(f32)grid_size * cast(f32)grid_spacing, 0, cast(f32)i * cast(f32)grid_spacing},
+			grid_color,
+		)
+	}
+
+	// Draw coordinate axes
+	axis_length := cast(f32)grid_size * cast(f32)grid_spacing
+	raylib.DrawLine3D({0, 0, 0}, {axis_length, 0, 0}, raylib.RED) // X axis
+	raylib.DrawLine3D({0, 0, 0}, {0, axis_length, 0}, raylib.GREEN) // Y axis
+	raylib.DrawLine3D({0, 0, 0}, {0, 0, axis_length}, raylib.BLUE) // Z axis
+
+	// Render all entities
+	for entity in current_scene.entities {
+		// Skip root node (Entity 0) and camera entities
+		if entity == 0 || ecs_get_camera(entity) != nil {
+			continue
+		}
+
+		// Get transform component
+		transform := ecs_get_transform(entity)
+		if transform == nil {
+			log_warning(.ENGINE, "Entity %d has no transform component", entity)
+			continue
+		}
+
+		// Get renderer component
+		renderer := ecs_get_renderer(entity)
+		if renderer == nil {
+			log_warning(.ENGINE, "Entity %d has no renderer component", entity)
+			continue
+		}
+
+		if !renderer.visible {
+			continue
+		}
+
+		// Handle model type changes
+		model: ^raylib.Model
+		switch renderer.model_type {
+		case .CUBE:
+			// Create a unique key for this entity's cube
+			cube_key := fmt.tprintf("cube_%d", entity)
+
+			// Check if we need to create a new cube
+			if model = asset_system.model_cache[cube_key]; model == nil {
+				// Create a new cube
+				cube := raylib.GenMeshCube(1.0, 1.0, 1.0)
+				model_ptr := new(raylib.Model)
+				model_ptr^ = raylib.LoadModelFromMesh(cube)
+				model_ptr.materials[0].maps[0].color = raylib.RED
+				asset_system.model_cache[cube_key] = model_ptr
+				model = model_ptr
+			}
+
+		case .AMBULANCE:
+			// Load ambulance model if not in cache
+			if model = asset_system.model_cache[renderer.mesh]; model == nil {
+				model = load_model(renderer.mesh)
+				if model != nil {
+					// Load and apply texture
+					texture := load_texture(renderer.material)
+					if texture.id != 0 {
+						for i in 0 ..< model.materialCount {
+							material := &model.materials[i]
+							material.maps[0].texture = texture
+							material.maps[0].color = raylib.WHITE
+							material.maps[0].value = 1.0
+						}
+					}
+				}
+			}
+		}
+
+		if model == nil {
+			log_error(.ENGINE, "Entity %d: Failed to load model", entity)
+			continue
+		}
+
+		// Set model transform
+		rotation_matrix := raylib.MatrixRotateXYZ(transform.rotation)
+		translation_matrix := raylib.MatrixTranslate(
+			transform.position.x,
+			transform.position.y,
+			transform.position.z,
+		)
+		model.transform = rotation_matrix * translation_matrix
+
+		// Draw model
+		raylib.DrawModel(model^, {0, 0, 0}, 1.0, raylib.WHITE)
+	}
 }

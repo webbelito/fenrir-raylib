@@ -95,6 +95,8 @@ asset_manager_shutdown :: proc() {
 
 // Load a model from file
 load_model :: proc(path: string) -> ^raylib.Model {
+	log_info(.ENGINE, "Attempting to load model: %s", path)
+
 	// Check cache first
 	if model, exists := asset_system.model_cache[path]; exists {
 		log_info(.ENGINE, "Model loaded from cache: %s", path)
@@ -105,7 +107,7 @@ load_model :: proc(path: string) -> ^raylib.Model {
 	model := new(raylib.Model)
 	model^ = raylib.LoadModel(strings.clone_to_cstring(path))
 	if model.meshCount == 0 {
-		log_error(.ENGINE, "Failed to load model: %s", path)
+		log_error(.ENGINE, "Failed to load model: %s (meshCount is 0)", path)
 		free(model)
 		return nil
 	}
@@ -114,7 +116,7 @@ load_model :: proc(path: string) -> ^raylib.Model {
 	asset_system.model_cache[path] = model
 
 	// Log model info
-	log_info(.ENGINE, "Model loaded: %s", path)
+	log_info(.ENGINE, "Model loaded successfully: %s", path)
 	log_info(.ENGINE, "  - Meshes: %d", model.meshCount)
 	log_info(.ENGINE, "  - Materials: %d", model.materialCount)
 	log_info(.ENGINE, "  - Bones: %d", model.boneCount)
