@@ -94,34 +94,157 @@ editor_update :: proc() {
 	}
 }
 
-// Render the scene tree panel
-render_scene_tree :: proc() {
-	// Get all entities with transforms
-	for entity, transform in entity_manager.transforms {
-		// Create tree node item using caprintf for direct C-string
-		name_cstr := fmt.caprintf("Entity %d", entity)
+// Render a node in the scene tree
+render_node :: proc(node_id: Entity) {
+	if node, ok := current_scene.nodes[node_id]; ok {
+		// Create a unique label for the node
+		label := fmt.caprintf("%s###node_%d", node.name, node_id)
+		defer delete(label)
 
-		// Set up flags for the tree node
-		flags: imgui.TreeNodeFlags = {.OpenOnArrow, .SpanAvailWidth, .Leaf}
-		if entity == editor.selected_entity {
+		// Create a tree node
+		flags := imgui.TreeNodeFlags{.OpenOnArrow}
+		if editor.selected_entity == node_id {
 			flags |= {.Selected}
 		}
-
-		// Create the tree node
-		node_open := imgui.TreeNodeEx(name_cstr, flags)
-
-		// Handle selection immediately after TreeNodeEx
-		if imgui.IsItemClicked() {
-			editor.selected_entity = entity
+		if node.expanded {
+			flags |= {.DefaultOpen}
 		}
 
-		if node_open {
+		// If node has children, make it expandable
+		if len(node.children) > 0 {
+			if imgui.TreeNodeEx(label, flags) {
+				// Handle node selection
+				if imgui.IsItemClicked() {
+					editor.selected_entity = node_id
+				}
+
+				// Render context menu
+				if imgui.BeginPopupContextItem() {
+					if imgui.MenuItem("Add Child") {
+						if new_node_id := create_node("New Node", node_id); new_node_id != 0 {
+							editor.selected_entity = new_node_id
+							// Update the node's expanded state
+							if node, ok := current_scene.nodes[node_id]; ok {
+								node.expanded = true
+								current_scene.nodes[node_id] = node
+							}
+						}
+					}
+					if node_id != 0 && imgui.MenuItem("Delete Node") {
+						delete_node(node_id)
+						if editor.selected_entity == node_id {
+							editor.selected_entity = 0
+						}
+					}
+					imgui.EndPopup()
+				}
+
+				// Render children recursively
+				for child_id in node.children {
+					render_node(child_id)
+				}
+				imgui.TreePop()
+			}
+		} else {
+			// Leaf node - just a selectable item
+			if imgui.Selectable(label, editor.selected_entity == node_id) {
+				editor.selected_entity = node_id
+			}
+
+			// Render context menu for leaf nodes too
+			if imgui.BeginPopupContextItem() {
+				if imgui.MenuItem("Add Child") {
+					if new_node_id := create_node("New Node", node_id); new_node_id != 0 {
+						editor.selected_entity = new_node_id
+						// Update the node's expanded state
+						if node, ok := current_scene.nodes[node_id]; ok {
+							node.expanded = true
+							current_scene.nodes[node_id] = node
+						}
+					}
+				}
+				if node_id != 0 && imgui.MenuItem("Delete Node") {
+					delete_node(node_id)
+					if editor.selected_entity == node_id {
+						editor.selected_entity = 0
+					}
+				}
+				imgui.EndPopup()
+			}
+		}
+	}
+}
+
+// Render the scene tree
+render_scene_tree :: proc() {
+	if !imgui.Begin("Scene Tree") {
+		imgui.End()
+		return
+	}
+
+	if !current_scene.loaded {
+		imgui.Text("No scene loaded")
+		imgui.End()
+		return
+	}
+
+	// Add Node button
+	if imgui.Button("Add Node") {
+		parent_id := editor.selected_entity
+		if parent_id == 0 {
+			// If no node is selected, create under root
+			parent_id = 0
+		}
+		if new_node_id := create_node("New Node", parent_id); new_node_id != 0 {
+			editor.selected_entity = new_node_id
+			// Expand the parent node
+			if parent_id != 0 {
+				if node, ok := current_scene.nodes[parent_id]; ok {
+					node.expanded = true
+					current_scene.nodes[parent_id] = node
+				}
+			} else {
+				// Expand root node when adding a child to it
+				if root, ok := current_scene.nodes[0]; ok {
+					root.expanded = true
+					current_scene.nodes[0] = root
+				}
+			}
+		}
+	}
+
+	imgui.Separator()
+
+	// Render root node
+	if root, ok := current_scene.nodes[0]; ok {
+		// Create a unique label for the root node
+		label := fmt.caprintf("%s###node_%d", root.name, root.id)
+		defer delete(label)
+
+		// Create a tree node for root
+		flags := imgui.TreeNodeFlags{.OpenOnArrow}
+		if editor.selected_entity == root.id {
+			flags |= {.Selected}
+		}
+		if root.expanded {
+			flags |= {.DefaultOpen}
+		}
+
+		if imgui.TreeNodeEx(label, flags) {
+			// Handle root node selection
+			if imgui.IsItemClicked() {
+				editor.selected_entity = root.id
+			}
+
+			// Render root's children
+			for child_id in root.children {
+				render_node(child_id)
+			}
 			imgui.TreePop()
 		}
-
-		// Clean up C-string
-		delete(name_cstr)
 	}
+
+	imgui.End()
 }
 
 // Render the inspector panel
