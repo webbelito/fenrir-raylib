@@ -25,6 +25,8 @@ Editor_State :: struct {
 	current_dir:      string, // Current directory for file browser
 	file_list:        [dynamic]string, // List of files in current directory
 	selected_file:    string, // Currently selected file
+	renaming_node:    Entity,
+	rename_buffer:    [dynamic]u8,
 }
 
 editor: Editor_State
@@ -118,8 +120,20 @@ render_node :: proc(node_id: Entity) {
 					editor.selected_entity = node_id
 				}
 
+				// Handle double-click for renaming
+				if imgui.IsItemHovered() && imgui.IsMouseDoubleClicked(.Left) {
+					editor.renaming_node = node_id
+					editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
+					copy(editor.rename_buffer[:], node.name)
+				}
+
 				// Render context menu
 				if imgui.BeginPopupContextItem() {
+					if imgui.MenuItem("Rename") {
+						editor.renaming_node = node_id
+						editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
+						copy(editor.rename_buffer[:], node.name)
+					}
 					if imgui.MenuItem("Add Child") {
 						if new_node_id := create_node("New Node", node_id); new_node_id != 0 {
 							editor.selected_entity = new_node_id
@@ -139,6 +153,32 @@ render_node :: proc(node_id: Entity) {
 					imgui.EndPopup()
 				}
 
+				// Render rename input if this node is being renamed
+				if editor.renaming_node == node_id {
+					imgui.SetKeyboardFocusHere()
+					if imgui.InputText(
+						"###rename_input",
+						cstring(raw_data(editor.rename_buffer[:])),
+						len(editor.rename_buffer),
+						imgui.InputTextFlags{.EnterReturnsTrue},
+					) {
+						// Update node name
+						if node, ok := current_scene.nodes[node_id]; ok {
+							delete(node.name)
+							node.name = strings.clone(string(editor.rename_buffer[:]))
+							current_scene.nodes[node_id] = node
+							current_scene.dirty = true
+						}
+						editor.renaming_node = 0
+						delete(editor.rename_buffer)
+					}
+					// Cancel renaming on escape
+					if imgui.IsKeyPressed(.Escape) {
+						editor.renaming_node = 0
+						delete(editor.rename_buffer)
+					}
+				}
+
 				// Render children recursively
 				for child_id in node.children {
 					render_node(child_id)
@@ -151,8 +191,20 @@ render_node :: proc(node_id: Entity) {
 				editor.selected_entity = node_id
 			}
 
+			// Handle double-click for renaming
+			if imgui.IsItemHovered() && imgui.IsMouseDoubleClicked(.Left) {
+				editor.renaming_node = node_id
+				editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
+				copy(editor.rename_buffer[:], node.name)
+			}
+
 			// Render context menu for leaf nodes too
 			if imgui.BeginPopupContextItem() {
+				if imgui.MenuItem("Rename") {
+					editor.renaming_node = node_id
+					editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
+					copy(editor.rename_buffer[:], node.name)
+				}
 				if imgui.MenuItem("Add Child") {
 					if new_node_id := create_node("New Node", node_id); new_node_id != 0 {
 						editor.selected_entity = new_node_id
@@ -170,6 +222,32 @@ render_node :: proc(node_id: Entity) {
 					}
 				}
 				imgui.EndPopup()
+			}
+
+			// Render rename input if this node is being renamed
+			if editor.renaming_node == node_id {
+				imgui.SetKeyboardFocusHere()
+				if imgui.InputText(
+					"###rename_input",
+					cstring(raw_data(editor.rename_buffer[:])),
+					len(editor.rename_buffer),
+					imgui.InputTextFlags{.EnterReturnsTrue},
+				) {
+					// Update node name
+					if node, ok := current_scene.nodes[node_id]; ok {
+						delete(node.name)
+						node.name = strings.clone(string(editor.rename_buffer[:]))
+						current_scene.nodes[node_id] = node
+						current_scene.dirty = true
+					}
+					editor.renaming_node = 0
+					delete(editor.rename_buffer)
+				}
+				// Cancel renaming on escape
+				if imgui.IsKeyPressed(.Escape) {
+					editor.renaming_node = 0
+					delete(editor.rename_buffer)
+				}
 			}
 		}
 	}
