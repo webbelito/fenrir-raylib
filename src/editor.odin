@@ -98,11 +98,29 @@ editor_update :: proc() {
 render_scene_tree :: proc() {
 	// Get all entities with transforms
 	for entity, transform in entity_manager.transforms {
-		// Create selectable item
-		name := fmt.tprintf("Entity %d", entity)
-		if imgui.Selectable(strings.clone_to_cstring(name), entity == editor.selected_entity) {
+		// Create tree node item using caprintf for direct C-string
+		name_cstr := fmt.caprintf("Entity %d", entity)
+
+		// Set up flags for the tree node
+		flags: imgui.TreeNodeFlags = {.OpenOnArrow, .SpanAvailWidth, .Leaf}
+		if entity == editor.selected_entity {
+			flags |= {.Selected}
+		}
+
+		// Create the tree node
+		node_open := imgui.TreeNodeEx(name_cstr, flags)
+
+		// Handle selection immediately after TreeNodeEx
+		if imgui.IsItemClicked() {
 			editor.selected_entity = entity
 		}
+
+		if node_open {
+			imgui.TreePop()
+		}
+
+		// Clean up C-string
+		delete(name_cstr)
 	}
 }
 

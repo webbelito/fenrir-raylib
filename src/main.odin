@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:log"
 import "core:strings"
 import raylib "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
 
 main :: proc() {
 	// Initialize logging first

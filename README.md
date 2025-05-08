@@ -92,6 +92,7 @@ Building L4's odin-imgui is entirely automated, using build.py. All platforms sh
 
 - dear_bindings depends on a library called "ply". link. You can probably install this with python -m pip install ply
 - Windows depends on that vcvarsall.bat is in your path.
+- Browse to vendor/odin-imgui
 - Run python build.py
 
 ## License
