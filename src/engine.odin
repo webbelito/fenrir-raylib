@@ -29,12 +29,12 @@ Engine_Config :: struct {
 
 // Engine state
 Engine_State :: struct {
-	initialized: bool,
-	running:     bool,
-	playing:     bool, // Add playing state
-	camera:      raylib.Camera3D,
-	time:        Time_State,
-	config:      Engine_Config,
+	initialized:   bool,
+	running:       bool,
+	playing:       bool, // Add playing state
+	time:          Time_State,
+	config:        Engine_Config,
+	editor_camera: raylib.Camera3D, // Editor-specific camera
 }
 
 // Global engine state
@@ -154,17 +154,26 @@ engine_init :: proc(config: Engine_Config) -> bool {
 
 	log_info(.ENGINE, "Initializing engine")
 
+	// Initialize command manager
+	command_manager_init()
+
+	// Initialize ECS
+	ecs_init()
+
 	// Initialize component system
 	component_system_init()
 
 	// Initialize asset manager
 	asset_manager_init()
 
-	// Initialize scene system
-	scene_init()
+	// Initialize scene manager
+	scene_manager_init()
 
-	// Create a default scene
-	scene_new("Default")
+	// Create a new empty scene
+	if !scene_manager_new("Untitled") {
+		log_error(.ENGINE, "Failed to create initial scene")
+		return false
+	}
 
 	// Initialize engine state
 	engine.initialized = true
@@ -172,8 +181,8 @@ engine_init :: proc(config: Engine_Config) -> bool {
 	engine.playing = false
 	engine.config = config
 
-	// Set up default camera
-	engine.camera = raylib.Camera3D {
+	// Initialize editor camera
+	engine.editor_camera = raylib.Camera3D {
 		position   = {0, 5, -10},
 		target     = {0, 0, 0},
 		up         = {0, 1, 0},
@@ -194,45 +203,84 @@ engine_shutdown :: proc() {
 
 	log_info(.ENGINE, "Shutting down engine")
 
+	// Shutdown command manager
+	command_manager_shutdown()
+
+	// Shutdown ECS
+	ecs_shutdown()
+
+	// Shutdown component system
+	component_system_shutdown()
+
 	// Shutdown asset manager
 	asset_manager_shutdown()
 
-	// Close window
-	raylib.CloseWindow()
+	// Shutdown scene manager
+	scene_manager_shutdown()
 
 	engine.initialized = false
 	engine.running = false
+	engine.playing = false
 
-	log_info(.ENGINE, "Engine shut down successfully")
+	log_info(.ENGINE, "Engine shutdown complete")
 }
 
 // Update the engine
 engine_update :: proc() {
-	if !engine.initialized || !engine.running {
-		return
-	}
-
-	// Update time first
+	// Update time
 	time_update()
 
-	// Update camera
-	if raylib.IsKeyDown(.W) {
-		engine.camera.position.z += 0.1
+	// Begin ImGui frame
+	imgui_begin_frame()
+
+	// Handle camera movement based on mode
+	if !imgui.IsAnyItemActive() {
+		if editor_is_active() {
+			// Editor camera controls
+			if raylib.IsKeyDown(.W) {
+				engine.editor_camera.position += raylib.Vector3{0, 0, -0.1}
+				engine.editor_camera.target += raylib.Vector3{0, 0, -0.1}
+			}
+			if raylib.IsKeyDown(.S) {
+				engine.editor_camera.position += raylib.Vector3{0, 0, 0.1}
+				engine.editor_camera.target += raylib.Vector3{0, 0, 0.1}
+			}
+			if raylib.IsKeyDown(.A) {
+				engine.editor_camera.position += raylib.Vector3{-0.1, 0, 0}
+				engine.editor_camera.target += raylib.Vector3{-0.1, 0, 0}
+			}
+			if raylib.IsKeyDown(.D) {
+				engine.editor_camera.position += raylib.Vector3{0.1, 0, 0}
+				engine.editor_camera.target += raylib.Vector3{0.1, 0, 0}
+			}
+		} else if engine.playing {
+			// Game camera controls
+			main_camera := scene_manager_get_main_camera()
+			if main_camera != 0 {
+				camera := ecs_get_camera(main_camera)
+				transform := ecs_get_transform(main_camera)
+				if camera != nil && transform != nil && camera.enabled {
+					// Handle camera movement
+					if raylib.IsKeyDown(.W) {
+						transform.position += raylib.Vector3{0, 0, -0.1}
+					}
+					if raylib.IsKeyDown(.S) {
+						transform.position += raylib.Vector3{0, 0, 0.1}
+					}
+					if raylib.IsKeyDown(.A) {
+						transform.position += raylib.Vector3{-0.1, 0, 0}
+					}
+					if raylib.IsKeyDown(.D) {
+						transform.position += raylib.Vector3{0.1, 0, 0}
+					}
+				}
+			}
+		}
 	}
-	if raylib.IsKeyDown(.S) {
-		engine.camera.position.z -= 0.1
-	}
-	if raylib.IsKeyDown(.A) {
-		engine.camera.position.x -= 0.1
-	}
-	if raylib.IsKeyDown(.D) {
-		engine.camera.position.x += 0.1
-	}
-	if raylib.IsKeyDown(.SPACE) {
-		engine.camera.position.y += 0.1
-	}
-	if raylib.IsKeyDown(.LEFT_CONTROL) {
-		engine.camera.position.y -= 0.1
+
+	// Update scene
+	if scene_manager_is_loaded() {
+		scene_manager_update()
 	}
 
 	// Update editor
@@ -241,49 +289,45 @@ engine_update :: proc() {
 
 // Render the engine
 engine_render :: proc() {
-	if !engine.initialized {
-		return
-	}
-
-	// Start ImGui frame first
-	imgui_begin_frame()
-
-	// Begin drawing
 	raylib.BeginDrawing()
 	defer raylib.EndDrawing()
 
-	// Clear background
 	raylib.ClearBackground(raylib.BLACK)
 
 	// Begin 3D mode
-	raylib.BeginMode3D(engine.camera)
-	{
-		// Draw grid
-		raylib.DrawGrid(10, 1.0)
-
-		// Draw all entities with transforms
-		for entity, transform in entity_manager.transforms {
-			// Draw a red cube at each entity's position
-			raylib.DrawCube(transform.position, 1, 1, 1, raylib.RED)
+	if editor_is_active() {
+		// Use editor camera
+		raylib.BeginMode3D(engine.editor_camera)
+		{
+			// Render scene
+			scene_manager_render()
+		}
+		raylib.EndMode3D()
+	} else if engine.playing {
+		// Use game camera
+		main_camera := scene_manager_get_main_camera()
+		if main_camera != 0 {
+			camera := ecs_get_camera(main_camera)
+			if camera != nil && camera.enabled {
+				raylib_camera := scene_manager_get_camera()
+				raylib.BeginMode3D(raylib_camera)
+				{
+					// Render scene
+					scene_manager_render()
+				}
+				raylib.EndMode3D()
+			}
 		}
 	}
-	raylib.EndMode3D()
 
-	// Draw FPS
-	raylib.DrawFPS(10, 10)
-
-	// Draw play mode indicator
-	if engine.playing {
-		raylib.DrawText("PLAY MODE", 10, 40, 20, raylib.GREEN)
-	} else {
-		raylib.DrawText("EDIT MODE", 10, 40, 20, raylib.YELLOW)
-	}
-
-	// Render editor UI as overlay
+	// Render editor UI
 	editor_render()
 
 	// End ImGui frame and render
 	imgui_end_frame()
+
+	// Render FPS
+	raylib.DrawFPS(10, 10)
 }
 
 // Check if the engine should continue running

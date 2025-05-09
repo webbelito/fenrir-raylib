@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:log"
 import "core:strings"
 import raylib "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
 
 main :: proc() {
 	// Initialize logging first
@@ -13,10 +14,10 @@ main :: proc() {
 	// Create engine configuration
 	config := Engine_Config {
 		app_name            = "Fenrir Engine Demo",
-		window_width        = 1280,
-		window_height       = 720,
+		window_width        = 1920,
+		window_height       = 1080,
 		target_fps          = 60,
-		vsync               = false,
+		vsync               = true,
 		fullscreen          = false,
 		disable_escape_quit = true,
 	}
