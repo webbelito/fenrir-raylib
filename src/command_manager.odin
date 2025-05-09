@@ -14,6 +14,7 @@ Command_VTable :: struct {
 	undo:    proc(cmd: ^Command),
 	redo:    proc(cmd: ^Command),
 	destroy: proc(cmd: ^Command),
+	copy:    proc(cmd: ^Command) -> Command,
 }
 
 // Command manager to handle undo/redo stack
@@ -52,6 +53,20 @@ command_manager_shutdown :: proc() {
 
 // Execute a new command
 command_manager_execute :: proc(cmd: ^Command) {
+	// Validate command
+	if cmd == nil {
+		log_error(.ENGINE, "Cannot execute nil command")
+		return
+	}
+	if cmd.vtable == nil {
+		log_error(.ENGINE, "Cannot execute command with nil vtable")
+		return
+	}
+	if cmd.data == nil {
+		log_error(.ENGINE, "Cannot execute command with nil data")
+		return
+	}
+
 	// Clear redo stack when new command is executed
 	for &cmd in command_manager.redo_stack {
 		cmd.vtable.destroy(&cmd)
@@ -81,14 +96,40 @@ command_manager_undo :: proc() {
 	// Get the last command
 	cmd := command_manager.undo_stack[len(command_manager.undo_stack) - 1]
 
-	// Undo the command
+	// Validate command
+	if cmd.vtable == nil {
+		log_error(.ENGINE, "Cannot undo command with nil vtable")
+		pop(&command_manager.undo_stack)
+		return
+	}
+	if cmd.data == nil {
+		log_error(.ENGINE, "Cannot undo command with nil data")
+		pop(&command_manager.undo_stack)
+		return
+	}
+
+	// Create a new command with copied data
+	new_cmd := cmd.vtable.copy(&cmd)
+
+	// Validate copied command
+	if new_cmd.vtable == nil || new_cmd.data == nil {
+		log_error(.ENGINE, "Failed to copy command for redo stack")
+		cmd.vtable.destroy(&cmd)
+		pop(&command_manager.undo_stack)
+		return
+	}
+
+	// Undo the original command
 	cmd.vtable.undo(&cmd)
 
-	// Move to redo stack
-	append(&command_manager.redo_stack, cmd)
+	// Add the copied command to redo stack
+	append(&command_manager.redo_stack, new_cmd)
+
+	// Destroy and remove from undo stack
+	cmd.vtable.destroy(&cmd)
 	pop(&command_manager.undo_stack)
 
-	log_info(.ENGINE, "Undo\n")
+	log_info(.ENGINE, "Undo %s", get_command_name(&new_cmd))
 }
 
 // Redo the last undone command
@@ -100,14 +141,40 @@ command_manager_redo :: proc() {
 	// Get the last undone command
 	cmd := command_manager.redo_stack[len(command_manager.redo_stack) - 1]
 
-	// Redo the command
+	// Validate command
+	if cmd.vtable == nil {
+		log_error(.ENGINE, "Cannot redo command with nil vtable")
+		pop(&command_manager.redo_stack)
+		return
+	}
+	if cmd.data == nil {
+		log_error(.ENGINE, "Cannot redo command with nil data")
+		pop(&command_manager.redo_stack)
+		return
+	}
+
+	// Create a new command with copied data
+	new_cmd := cmd.vtable.copy(&cmd)
+
+	// Validate copied command
+	if new_cmd.vtable == nil || new_cmd.data == nil {
+		log_error(.ENGINE, "Failed to copy command for undo stack")
+		cmd.vtable.destroy(&cmd)
+		pop(&command_manager.redo_stack)
+		return
+	}
+
+	// Redo the original command
 	cmd.vtable.redo(&cmd)
 
-	// Move back to undo stack
-	append(&command_manager.undo_stack, cmd)
+	// Add the copied command to undo stack
+	append(&command_manager.undo_stack, new_cmd)
+
+	// Destroy and remove from redo stack
+	cmd.vtable.destroy(&cmd)
 	pop(&command_manager.redo_stack)
 
-	log_info(.ENGINE, "Redo\n")
+	log_info(.ENGINE, "Redo %s", get_command_name(&new_cmd))
 }
 
 // Check if undo is available

@@ -1049,3 +1049,94 @@ scene_manager_render :: proc() {
 		raylib.DrawModel(model^, {0, 0, 0}, 1.0, raylib.WHITE)
 	}
 }
+
+// Duplicate a node and its children
+scene_manager_duplicate_node :: proc(node_id: Entity) -> Entity {
+	if !scene_manager.current_scene.loaded {
+		return 0
+	}
+
+	// Get the node to duplicate
+	if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
+		// Create a new entity
+		new_entity := ecs_create_entity()
+		if new_entity == 0 {
+			return 0
+		}
+
+		// Copy all components from the original entity
+		if transform := ecs_get_transform(node_id); transform != nil {
+			new_transform := ecs_add_transform(new_entity)
+			if new_transform != nil {
+				new_transform^ = transform^
+			}
+		}
+
+		if renderer := ecs_get_renderer(node_id); renderer != nil {
+			new_renderer := ecs_add_renderer(new_entity)
+			if new_renderer != nil {
+				new_renderer^ = renderer^
+			}
+		}
+
+		if camera := ecs_get_camera(node_id); camera != nil {
+			new_camera := ecs_add_camera(new_entity, camera.fov, camera.near, camera.far, false)
+			if new_camera != nil {
+				new_camera^ = camera^
+			}
+		}
+
+		if light := ecs_get_light(node_id); light != nil {
+			new_light := ecs_add_light(new_entity, light.light_type)
+			if new_light != nil {
+				new_light^ = light^
+			}
+		}
+
+		if script := ecs_get_script(node_id); script != nil {
+			new_script := ecs_add_script(new_entity, script.script_name)
+			if new_script != nil {
+				new_script^ = script^
+			}
+		}
+
+		// Create a new node with a unique name
+		new_name := fmt.tprintf("%s (Copy)", node.name)
+		new_node := Node {
+			id        = new_entity,
+			name      = strings.clone(new_name),
+			parent_id = node.parent_id,
+			children  = make([dynamic]Entity),
+			expanded  = node.expanded,
+		}
+
+		// Add the new node to the scene
+		scene_manager.current_scene.nodes[new_entity] = new_node
+		append(&scene_manager.current_scene.entities, new_entity)
+
+		// Add the new node as a child of the original node's parent
+		if parent, ok := scene_manager.current_scene.nodes[node.parent_id]; ok {
+			append(&parent.children, new_entity)
+			scene_manager.current_scene.nodes[node.parent_id] = parent
+		}
+
+		// Recursively duplicate children
+		for child_id in node.children {
+			if new_child_id := scene_manager_duplicate_node(child_id); new_child_id != 0 {
+				// Update the new child's parent to be the new node
+				if child, ok := scene_manager.current_scene.nodes[new_child_id]; ok {
+					child.parent_id = new_entity
+					scene_manager.current_scene.nodes[new_child_id] = child
+					append(&new_node.children, new_child_id)
+				}
+			}
+		}
+
+		scene_manager.current_scene.nodes[new_entity] = new_node
+		scene_manager.current_scene.dirty = true
+
+		return new_entity
+	}
+
+	return 0
+}

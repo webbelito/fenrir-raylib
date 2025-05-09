@@ -13,20 +13,22 @@ import raylib "vendor:raylib"
 
 // Editor state
 Editor_State :: struct {
-	initialized:      bool,
-	selected_entity:  Entity,
-	scene_tree_open:  bool,
-	inspector_open:   bool,
-	scene_path:       string,
-	show_save_dialog: bool,
-	save_dialog_name: [256]u8, // Buffer for scene name input
-	show_open_dialog: bool, // Flag to show open scene dialog
-	available_scenes: [dynamic]string, // List of available scene files
-	current_dir:      string, // Current directory for file browser
-	file_list:        [dynamic]string, // List of files in current directory
-	selected_file:    string, // Currently selected file
-	renaming_node:    Entity,
-	rename_buffer:    [256]u8, // Fixed-size buffer for renaming
+	initialized:         bool,
+	selected_entity:     Entity,
+	scene_tree_open:     bool,
+	inspector_open:      bool,
+	scene_path:          string,
+	show_save_dialog:    bool,
+	save_dialog_name:    [256]u8, // Buffer for scene name input
+	show_open_dialog:    bool, // Flag to show open scene dialog
+	available_scenes:    [dynamic]string, // List of available scene files
+	current_dir:         string, // Current directory for file browser
+	file_list:           [dynamic]string, // List of files in current directory
+	selected_file:       string, // Currently selected file
+	renaming_node:       Entity,
+	rename_buffer:       [256]u8, // Fixed-size buffer for renaming
+	show_unsaved_dialog: bool,
+	pending_action:      string,
 }
 
 editor: Editor_State
@@ -43,17 +45,19 @@ editor_init :: proc() -> bool {
 	}
 
 	editor = Editor_State {
-		initialized      = true,
-		scene_tree_open  = true,
-		inspector_open   = true,
-		scene_path       = "",
-		show_save_dialog = false,
-		show_open_dialog = false,
-		available_scenes = make([dynamic]string),
-		current_dir      = "assets/scenes",
-		file_list        = make([dynamic]string),
-		selected_file    = "",
-		renaming_node    = 0,
+		initialized         = true,
+		scene_tree_open     = true,
+		inspector_open      = true,
+		scene_path          = "",
+		show_save_dialog    = false,
+		show_open_dialog    = false,
+		available_scenes    = make([dynamic]string),
+		current_dir         = "assets/scenes",
+		file_list           = make([dynamic]string),
+		selected_file       = "",
+		renaming_node       = 0,
+		show_unsaved_dialog = false,
+		pending_action      = "",
 	}
 
 	log_info(.ENGINE, "Editor initialized")
@@ -107,31 +111,9 @@ editor_update :: proc() {
 	// Handle editor input
 	editor_handle_input()
 
-	// Render save dialog
-	if editor.show_save_dialog {
-		if imgui.Begin("Save Scene", &editor.show_save_dialog) {
-			imgui.Text("Enter scene name:")
-			if imgui.InputText(
-				"##SceneName",
-				cstring(raw_data(editor.save_dialog_name[:])),
-				len(editor.save_dialog_name),
-			) {
-				// Handle input
-			}
-			if imgui.Button("Save") {
-				scene_name := string(editor.save_dialog_name[:])
-				if len(scene_name) > 0 {
-					scene_manager_new(scene_name)
-					editor.show_save_dialog = false
-				}
-			}
-			imgui.SameLine()
-			if imgui.Button("Cancel") {
-				editor.show_save_dialog = false
-			}
-			imgui.End()
-		}
-	}
+	// Render dialogs
+	render_save_dialog()
+	render_unsaved_dialog()
 
 	// Render open dialog
 	if editor.show_open_dialog {
@@ -226,18 +208,20 @@ render_node :: proc(node_id: Entity) {
 						copy(editor.rename_buffer[:], node.name)
 					}
 					if imgui.MenuItem("Add Child") {
-						if new_node_id := scene_manager_create_node("New Node", node_id);
-						   new_node_id != 0 {
-							editor.selected_entity = new_node_id
-							// Update the node's expanded state
-							if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
-								node.expanded = true
-								scene_manager.current_scene.nodes[node_id] = node
-							}
+						cmd := command_create_node_add("New Node", node_id)
+						command_manager_execute(&cmd)
+						if add_data := cast(^Command_Node_Add)cmd.data; add_data != nil {
+							editor.selected_entity = add_data.entity_id
+						}
+						// Update the node's expanded state
+						if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
+							node.expanded = true
+							scene_manager.current_scene.nodes[node_id] = node
 						}
 					}
 					if node_id != 0 && imgui.MenuItem("Delete Node") {
-						scene_manager_delete_node(node_id)
+						cmd := command_create_node_delete(node_id)
+						command_manager_execute(&cmd)
 						if editor.selected_entity == node_id {
 							editor.selected_entity = 0
 						}
@@ -304,18 +288,20 @@ render_node :: proc(node_id: Entity) {
 					copy(editor.rename_buffer[:], node.name)
 				}
 				if imgui.MenuItem("Add Child") {
-					if new_node_id := scene_manager_create_node("New Node", node_id);
-					   new_node_id != 0 {
-						editor.selected_entity = new_node_id
-						// Update the node's expanded state
-						if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
-							node.expanded = true
-							scene_manager.current_scene.nodes[node_id] = node
-						}
+					cmd := command_create_node_add("New Node", node_id)
+					command_manager_execute(&cmd)
+					if add_data := cast(^Command_Node_Add)cmd.data; add_data != nil {
+						editor.selected_entity = add_data.entity_id
+					}
+					// Update the node's expanded state
+					if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
+						node.expanded = true
+						scene_manager.current_scene.nodes[node_id] = node
 					}
 				}
 				if node_id != 0 && imgui.MenuItem("Delete Node") {
-					scene_manager_delete_node(node_id)
+					cmd := command_create_node_delete(node_id)
+					command_manager_execute(&cmd)
 					if editor.selected_entity == node_id {
 						editor.selected_entity = 0
 					}
@@ -370,20 +356,22 @@ render_scene_tree :: proc() {
 			// If no node is selected, create under root
 			parent_id = 0
 		}
-		if new_node_id := scene_manager_create_node("New Node", parent_id); new_node_id != 0 {
-			editor.selected_entity = new_node_id
-			// Expand the parent node
-			if parent_id != 0 {
-				if node, ok := scene_manager.current_scene.nodes[parent_id]; ok {
-					node.expanded = true
-					scene_manager.current_scene.nodes[parent_id] = node
-				}
-			} else {
-				// Expand root node when adding a child to it
-				if root, ok := scene_manager.current_scene.nodes[0]; ok {
-					root.expanded = true
-					scene_manager.current_scene.nodes[0] = root
-				}
+		cmd := command_create_node_add("New Node", parent_id)
+		command_manager_execute(&cmd)
+		if add_data := cast(^Command_Node_Add)cmd.data; add_data != nil {
+			editor.selected_entity = add_data.entity_id
+		}
+		// Expand the parent node
+		if parent_id != 0 {
+			if node, ok := scene_manager.current_scene.nodes[parent_id]; ok {
+				node.expanded = true
+				scene_manager.current_scene.nodes[parent_id] = node
+			}
+		} else {
+			// Expand root node when adding a child to it
+			if root, ok := scene_manager.current_scene.nodes[0]; ok {
+				root.expanded = true
+				scene_manager.current_scene.nodes[0] = root
 			}
 		}
 	}
@@ -455,66 +443,59 @@ render_inspector :: proc() {
 	}
 }
 
+// Helper function to save the current scene
+save_current_scene :: proc() {
+	// Convert the name buffer to a string
+	scene_name := string(editor.save_dialog_name[:])
+	// Trim any null terminators
+	for i := 0; i < len(scene_name); i += 1 {
+		if scene_name[i] == 0 {
+			scene_name = scene_name[:i]
+			break
+		}
+	}
+
+	// Create the save path
+	save_path := fmt.tprintf("assets/scenes/%s.json", scene_name)
+	if scene_manager_save(save_path) {
+		editor.scene_path = save_path
+		editor.show_save_dialog = false
+	}
+}
+
 // Render the save dialog
 render_save_dialog :: proc() {
 	if editor.show_save_dialog {
-		imgui.SetNextWindowPos(imgui.GetIO().DisplaySize * 0.5, .Always, {0.5, 0.5})
-		imgui.SetNextWindowSize({300, 100})
-		if imgui.Begin(
-			"Save Scene###SaveSceneWindow",
-			&editor.show_save_dialog,
-			{.AlwaysAutoResize, .NoCollapse},
-		) {
+		// Center the window
+		viewport := imgui.GetMainViewport()
+		center := viewport.WorkPos + viewport.WorkSize * 0.5
+		size := imgui.Vec2{400, 150}
+		pos := center - size * 0.5
+
+		imgui.SetNextWindowPos(pos, .None)
+		imgui.SetNextWindowSize(size, .None)
+
+		if imgui.Begin("Save Scene", &editor.show_save_dialog, {.NoCollapse}) {
 			imgui.Text("Enter scene name:")
 			imgui.Spacing()
 
 			// Text input for scene name
 			if imgui.InputText(
-				"Scene Name###SaveSceneNameInput",
+				"Scene Name",
 				cstring(raw_data(editor.save_dialog_name[:])),
 				len(editor.save_dialog_name),
 				imgui.InputTextFlags{.EnterReturnsTrue},
 			) {
-				// Convert the name buffer to a string
-				scene_name := string(editor.save_dialog_name[:])
-				// Trim any null terminators
-				for i := 0; i < len(scene_name); i += 1 {
-					if scene_name[i] == 0 {
-						scene_name = scene_name[:i]
-						break
-					}
-				}
-
-				// Create the save path
-				save_path := fmt.tprintf("assets/scenes/%s.json", scene_name)
-				if scene_manager_save(save_path) {
-					editor.scene_path = save_path
-					editor.show_save_dialog = false
-				}
+				save_current_scene()
 			}
 
 			imgui.Spacing()
-			if imgui.Button("Save###SaveSceneSaveButton") {
-				// Convert the name buffer to a string
-				scene_name := string(editor.save_dialog_name[:])
-				// Trim any null terminators
-				for i := 0; i < len(scene_name); i += 1 {
-					if scene_name[i] == 0 {
-						scene_name = scene_name[:i]
-						break
-					}
-				}
-
-				// Create the save path
-				save_path := fmt.tprintf("assets/scenes/%s.json", scene_name)
-				if scene_manager_save(save_path) {
-					editor.scene_path = save_path
-					editor.show_save_dialog = false
-				}
+			if imgui.Button("Save") {
+				save_current_scene()
 			}
 
 			imgui.SameLine()
-			if imgui.Button("Cancel###SaveSceneCancelButton") {
+			if imgui.Button("Cancel") {
 				editor.show_save_dialog = false
 				// Clear the buffer when canceling
 				for i in 0 ..< len(editor.save_dialog_name) {
@@ -524,6 +505,75 @@ render_save_dialog :: proc() {
 		}
 		imgui.End()
 	}
+}
+
+// Render the unsaved changes dialog
+render_unsaved_dialog :: proc() {
+	if editor.show_unsaved_dialog {
+		// Center the window
+		viewport := imgui.GetMainViewport()
+		center := viewport.WorkPos + viewport.WorkSize * 0.5
+		size := imgui.Vec2{400, 150}
+		pos := center - size * 0.5
+
+		imgui.SetNextWindowPos(pos, .None)
+		imgui.SetNextWindowSize(size, .None)
+
+		if imgui.Begin("Unsaved Changes", &editor.show_unsaved_dialog, {.NoCollapse}) {
+			imgui.Text("Do you want to save your changes?")
+			imgui.Spacing()
+
+			if imgui.Button("Save") {
+				if editor.scene_path == "" {
+					editor.show_save_dialog = true
+				} else {
+					scene_manager_save(editor.scene_path)
+				}
+				editor.show_unsaved_dialog = false
+				// Perform the pending action after saving
+				perform_pending_action()
+			}
+
+			imgui.SameLine()
+			if imgui.Button("Don't Save") {
+				editor.show_unsaved_dialog = false
+				// Perform the pending action without saving
+				perform_pending_action()
+			}
+
+			imgui.SameLine()
+			if imgui.Button("Cancel") {
+				editor.show_unsaved_dialog = false
+				editor.pending_action = ""
+			}
+		}
+		imgui.End()
+	}
+}
+
+// Perform the pending action after handling unsaved changes
+perform_pending_action :: proc() {
+	switch editor.pending_action {
+	case "new":
+		scene_manager_new("Untitled")
+		editor.scene_path = ""
+	case "open":
+		scan_directory(editor.current_dir)
+		editor.show_open_dialog = true
+	case "exit":
+	// TODO: Handle exit
+	}
+	editor.pending_action = ""
+}
+
+// Check for unsaved changes and show dialog if needed
+check_unsaved_changes :: proc(action: string) -> bool {
+	if scene_manager_is_dirty() {
+		editor.show_unsaved_dialog = true
+		editor.pending_action = action
+		return true
+	}
+	return false
 }
 
 // Render the editor UI
@@ -537,12 +587,16 @@ editor_render :: proc() {
 		// File menu
 		if imgui.BeginMenu("File") {
 			if imgui.MenuItem("New Scene") {
-				scene_manager_new("Untitled")
-				editor.scene_path = ""
+				if !check_unsaved_changes("new") {
+					scene_manager_new("Untitled")
+					editor.scene_path = ""
+				}
 			}
 			if imgui.MenuItem("Open Scene") {
-				scan_directory(editor.current_dir) // Refresh the list
-				editor.show_open_dialog = true
+				if !check_unsaved_changes("open") {
+					scan_directory(editor.current_dir)
+					editor.show_open_dialog = true
+				}
 			}
 			if imgui.MenuItem("Save Scene") {
 				if editor.scene_path == "" {
@@ -572,7 +626,9 @@ editor_render :: proc() {
 			}
 			imgui.Separator()
 			if imgui.MenuItem("Exit", "Alt+F4") {
-				// TODO: Handle exit
+				if !check_unsaved_changes("exit") {
+					// TODO: Handle exit
+				}
 			}
 			imgui.EndMenu()
 		}
@@ -681,9 +737,6 @@ editor_render :: proc() {
 		imgui.EndMainMenuBar()
 	}
 
-	// Render dialogs
-	render_save_dialog()
-
 	// Get the main window size
 	window_size := imgui.GetIO().DisplaySize
 	panel_width := window_size.x * 0.2 // 20% of screen width
@@ -748,6 +801,28 @@ editor_is_active :: proc() -> bool {
 editor_handle_input :: proc() {
 	// Handle keyboard shortcuts
 	if imgui.IsKeyDown(.LeftCtrl) || imgui.IsKeyDown(.RightCtrl) {
+		// Save (Ctrl+S)
+		if imgui.IsKeyPressed(.S) {
+			if editor.scene_path == "" {
+				editor.show_save_dialog = true
+			} else {
+				scene_manager_save(editor.scene_path)
+			}
+		}
+		// Open (Ctrl+O)
+		if imgui.IsKeyPressed(.O) {
+			if !check_unsaved_changes("open") {
+				scan_directory(editor.current_dir)
+				editor.show_open_dialog = true
+			}
+		}
+		// New (Ctrl+N)
+		if imgui.IsKeyPressed(.N) {
+			if !check_unsaved_changes("new") {
+				scene_manager_new("Untitled")
+				editor.scene_path = ""
+			}
+		}
 		// Undo (Ctrl+Z)
 		if imgui.IsKeyPressed(.Z) {
 			command_manager_undo()
@@ -755,6 +830,39 @@ editor_handle_input :: proc() {
 		// Redo (Ctrl+Y)
 		if imgui.IsKeyPressed(.Y) {
 			command_manager_redo()
+		}
+		// Duplicate (Ctrl+D)
+		if imgui.IsKeyPressed(.D) && editor.selected_entity != 0 {
+			cmd := command_create_node_duplicate(editor.selected_entity)
+			command_manager_execute(&cmd)
+		}
+	}
+
+	// Scene tree shortcuts
+	if editor.selected_entity != 0 {
+		// Delete selected entity (Delete)
+		if imgui.IsKeyPressed(.Delete) {
+			scene_manager_delete_node(editor.selected_entity)
+			editor.selected_entity = 0
+		}
+		// Duplicate selected entity (Ctrl+D)
+		if (imgui.IsKeyDown(.LeftCtrl) || imgui.IsKeyDown(.RightCtrl)) && imgui.IsKeyPressed(.D) {
+			if new_node_id := scene_manager_duplicate_node(editor.selected_entity);
+			   new_node_id != 0 {
+				editor.selected_entity = new_node_id
+			}
+		}
+		// Rename selected entity (F2)
+		if imgui.IsKeyPressed(.F2) {
+			editor.renaming_node = editor.selected_entity
+			// Clear the buffer
+			for i in 0 ..< len(editor.rename_buffer) {
+				editor.rename_buffer[i] = 0
+			}
+			// Copy the current name
+			if node, ok := scene_manager.current_scene.nodes[editor.selected_entity]; ok {
+				copy(editor.rename_buffer[:], node.name)
+			}
 		}
 	}
 }
