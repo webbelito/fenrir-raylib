@@ -173,12 +173,40 @@ command_node_delete_undo :: proc(cmd: ^Command) {
 	// Recreate the node
 	if new_id := scene_manager_create_node(data.name, data.parent_id); new_id != 0 {
 		data.entity_id = new_id
-		log_info(.ENGINE, "Undid deleting node '%s'", data.name)
+
+		// Restore children
+		for child_id in data.children {
+			if child, ok := scene_manager.current_scene.nodes[child_id]; ok {
+				// Update child's parent to point to the recreated node
+				child.parent_id = new_id
+				scene_manager.current_scene.nodes[child_id] = child
+
+				// Add child to the recreated node's children
+				if parent, ok := scene_manager.current_scene.nodes[new_id]; ok {
+					append(&parent.children, child_id)
+					scene_manager.current_scene.nodes[new_id] = parent
+				}
+			}
+		}
+
+		// If the node was selected before deletion, select it again
+		if editor.selected_entity == 0 {
+			editor.selected_entity = new_id
+		}
 	}
 }
 
 command_node_delete_redo :: proc(cmd: ^Command) {
-	command_node_delete_execute(cmd)
+	data := cast(^Command_Node_Delete)cmd.data
+	if data == nil do return
+
+	// Delete the node
+	scene_manager_delete_node(data.entity_id)
+
+	// If the deleted node was selected, select the root node instead
+	if editor.selected_entity == data.entity_id {
+		editor.selected_entity = 0
+	}
 }
 
 command_node_delete_destroy :: proc(cmd: ^Command) {

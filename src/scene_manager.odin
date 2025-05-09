@@ -377,7 +377,11 @@ scene_manager_delete_node :: proc(node_id: Entity) {
 		return
 	}
 
-	node := scene_manager.current_scene.nodes[node_id]
+	// Check if node exists
+	node, ok := scene_manager.current_scene.nodes[node_id]
+	if !ok {
+		return
+	}
 
 	// First delete all children
 	for child_id in node.children {

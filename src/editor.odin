@@ -842,8 +842,10 @@ editor_handle_input :: proc() {
 	if editor.selected_entity != 0 {
 		// Delete selected entity (Delete)
 		if imgui.IsKeyPressed(.Delete) {
-			scene_manager_delete_node(editor.selected_entity)
-			editor.selected_entity = 0
+			if editor.selected_entity != 0 { 	// Don't allow deleting root node
+				cmd := command_create_node_delete(editor.selected_entity)
+				command_manager_execute(&cmd)
+			}
 		}
 		// Duplicate selected entity (Ctrl+D)
 		if (imgui.IsKeyDown(.LeftCtrl) || imgui.IsKeyDown(.RightCtrl)) && imgui.IsKeyPressed(.D) {
