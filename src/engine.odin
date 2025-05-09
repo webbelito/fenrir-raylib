@@ -269,7 +269,7 @@ engine_update :: proc() {
 	}
 
 	// Update scene
-	if current_scene.loaded {
+	if scene_manager_is_loaded() {
 		scene_update()
 	}
 

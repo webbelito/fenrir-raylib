@@ -98,7 +98,7 @@ editor_update :: proc() {
 
 // Render a node in the scene tree
 render_node :: proc(node_id: Entity) {
-	if node, ok := current_scene.nodes[node_id]; ok {
+	if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
 		// Create a unique label for the node
 		label := fmt.caprintf("%s###node_%d", node.name, node_id)
 		defer delete(label)
@@ -124,7 +124,7 @@ render_node :: proc(node_id: Entity) {
 				if imgui.IsItemHovered() && imgui.IsMouseDoubleClicked(.Left) {
 					editor.renaming_node = node_id
 					editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
-					copy(editor.rename_buffer[:], node.name)
+					copy_from_string(editor.rename_buffer[:], node.name)
 				}
 
 				// Render context menu
@@ -132,20 +132,21 @@ render_node :: proc(node_id: Entity) {
 					if imgui.MenuItem("Rename") {
 						editor.renaming_node = node_id
 						editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
-						copy(editor.rename_buffer[:], node.name)
+						copy_from_string(editor.rename_buffer[:], node.name)
 					}
 					if imgui.MenuItem("Add Child") {
-						if new_node_id := create_node("New Node", node_id); new_node_id != 0 {
+						if new_node_id := scene_manager_create_node("New Node", node_id);
+						   new_node_id != 0 {
 							editor.selected_entity = new_node_id
 							// Update the node's expanded state
-							if node, ok := current_scene.nodes[node_id]; ok {
+							if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
 								node.expanded = true
-								current_scene.nodes[node_id] = node
+								scene_manager.current_scene.nodes[node_id] = node
 							}
 						}
 					}
 					if node_id != 0 && imgui.MenuItem("Delete Node") {
-						delete_node(node_id)
+						scene_manager_delete_node(node_id)
 						if editor.selected_entity == node_id {
 							editor.selected_entity = 0
 						}
@@ -163,11 +164,11 @@ render_node :: proc(node_id: Entity) {
 						imgui.InputTextFlags{.EnterReturnsTrue},
 					) {
 						// Update node name
-						if node, ok := current_scene.nodes[node_id]; ok {
+						if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
 							delete(node.name)
 							node.name = strings.clone(string(editor.rename_buffer[:]))
-							current_scene.nodes[node_id] = node
-							current_scene.dirty = true
+							scene_manager.current_scene.nodes[node_id] = node
+							scene_manager.current_scene.dirty = true
 						}
 						editor.renaming_node = 0
 						delete(editor.rename_buffer)
@@ -195,7 +196,7 @@ render_node :: proc(node_id: Entity) {
 			if imgui.IsItemHovered() && imgui.IsMouseDoubleClicked(.Left) {
 				editor.renaming_node = node_id
 				editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
-				copy(editor.rename_buffer[:], node.name)
+				copy_from_string(editor.rename_buffer[:], node.name)
 			}
 
 			// Render context menu for leaf nodes too
@@ -203,20 +204,21 @@ render_node :: proc(node_id: Entity) {
 				if imgui.MenuItem("Rename") {
 					editor.renaming_node = node_id
 					editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
-					copy(editor.rename_buffer[:], node.name)
+					copy_from_string(editor.rename_buffer[:], node.name)
 				}
 				if imgui.MenuItem("Add Child") {
-					if new_node_id := create_node("New Node", node_id); new_node_id != 0 {
+					if new_node_id := scene_manager_create_node("New Node", node_id);
+					   new_node_id != 0 {
 						editor.selected_entity = new_node_id
 						// Update the node's expanded state
-						if node, ok := current_scene.nodes[node_id]; ok {
+						if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
 							node.expanded = true
-							current_scene.nodes[node_id] = node
+							scene_manager.current_scene.nodes[node_id] = node
 						}
 					}
 				}
 				if node_id != 0 && imgui.MenuItem("Delete Node") {
-					delete_node(node_id)
+					scene_manager_delete_node(node_id)
 					if editor.selected_entity == node_id {
 						editor.selected_entity = 0
 					}
@@ -234,11 +236,11 @@ render_node :: proc(node_id: Entity) {
 					imgui.InputTextFlags{.EnterReturnsTrue},
 				) {
 					// Update node name
-					if node, ok := current_scene.nodes[node_id]; ok {
+					if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
 						delete(node.name)
 						node.name = strings.clone(string(editor.rename_buffer[:]))
-						current_scene.nodes[node_id] = node
-						current_scene.dirty = true
+						scene_manager.current_scene.nodes[node_id] = node
+						scene_manager.current_scene.dirty = true
 					}
 					editor.renaming_node = 0
 					delete(editor.rename_buffer)
@@ -260,7 +262,7 @@ render_scene_tree :: proc() {
 		return
 	}
 
-	if !current_scene.loaded {
+	if !scene_manager_is_loaded() {
 		imgui.Text("No scene loaded")
 		imgui.End()
 		return
@@ -273,19 +275,19 @@ render_scene_tree :: proc() {
 			// If no node is selected, create under root
 			parent_id = 0
 		}
-		if new_node_id := create_node("New Node", parent_id); new_node_id != 0 {
+		if new_node_id := scene_manager_create_node("New Node", parent_id); new_node_id != 0 {
 			editor.selected_entity = new_node_id
 			// Expand the parent node
 			if parent_id != 0 {
-				if node, ok := current_scene.nodes[parent_id]; ok {
+				if node, ok := scene_manager.current_scene.nodes[parent_id]; ok {
 					node.expanded = true
-					current_scene.nodes[parent_id] = node
+					scene_manager.current_scene.nodes[parent_id] = node
 				}
 			} else {
 				// Expand root node when adding a child to it
-				if root, ok := current_scene.nodes[0]; ok {
+				if root, ok := scene_manager.current_scene.nodes[0]; ok {
 					root.expanded = true
-					current_scene.nodes[0] = root
+					scene_manager.current_scene.nodes[0] = root
 				}
 			}
 		}
@@ -294,7 +296,7 @@ render_scene_tree :: proc() {
 	imgui.Separator()
 
 	// Render root node
-	if root, ok := current_scene.nodes[0]; ok {
+	if root, ok := scene_manager.current_scene.nodes[0]; ok {
 		// Create a unique label for the root node
 		label := fmt.caprintf("%s###node_%d", root.name, root.id)
 		defer delete(label)
@@ -514,7 +516,7 @@ editor_render :: proc() {
 				if editor.scene_path == "" {
 					editor.show_save_dialog = true
 					// Initialize the name buffer with the current scene name
-					copy(editor.save_dialog_name[:], current_scene.name)
+					copy_from_string(editor.save_dialog_name[:], scene_manager.current_scene.name)
 				} else {
 					scene_save(editor.scene_path)
 				}
@@ -522,7 +524,7 @@ editor_render :: proc() {
 			if imgui.MenuItem("Save Scene As...", "Ctrl+Shift+S") {
 				editor.show_save_dialog = true
 				// Initialize the name buffer with the current scene name
-				copy(editor.save_dialog_name[:], current_scene.name)
+				copy_from_string(editor.save_dialog_name[:], scene_manager.current_scene.name)
 			}
 			imgui.Separator()
 			if imgui.MenuItem("Exit", "Alt+F4") {
@@ -545,65 +547,73 @@ editor_render :: proc() {
 		// Entity menu
 		if imgui.BeginMenu("Entity") {
 			if imgui.MenuItem("Add Empty", "Ctrl+Shift+N") {
-				entity := create_entity(0, 0, 0)
-				append(&current_scene.entities, entity)
+				entity := ecs_create_entity()
+				scene_manager_add_entity(entity)
 				editor.selected_entity = entity
 			}
 			if imgui.BeginMenu("3D Object") {
 				if imgui.MenuItem("Cube") {
-					entity := create_entity(0, 0, 0)
+					entity := ecs_create_entity()
 					transform := ecs_add_transform(entity)
 					renderer := ecs_add_renderer(entity)
-					if renderer != nil {
+					if transform != nil && renderer != nil {
 						renderer.mesh = "cube"
 						renderer.material = "default"
 					}
-					append(&current_scene.entities, entity)
+					scene_manager_add_entity(entity)
 					editor.selected_entity = entity
 				}
 				if imgui.MenuItem("Sphere") {
-					entity := create_entity(0, 0, 0)
+					entity := ecs_create_entity()
 					transform := ecs_add_transform(entity)
 					renderer := ecs_add_renderer(entity)
-					if renderer != nil {
+					if transform != nil && renderer != nil {
 						renderer.mesh = "sphere"
 						renderer.material = "default"
 					}
-					append(&current_scene.entities, entity)
+					scene_manager_add_entity(entity)
 					editor.selected_entity = entity
 				}
 				imgui.EndMenu()
 			}
 			if imgui.BeginMenu("Light") {
 				if imgui.MenuItem("Directional Light") {
-					entity := create_entity(0, 0, 0)
+					entity := ecs_create_entity()
 					transform := ecs_add_transform(entity)
 					light := ecs_add_light(entity, .DIRECTIONAL)
-					append(&current_scene.entities, entity)
-					editor.selected_entity = entity
+					if transform != nil && light != nil {
+						scene_manager_add_entity(entity)
+						editor.selected_entity = entity
+					}
 				}
 				if imgui.MenuItem("Point Light") {
-					entity := create_entity(0, 0, 0)
+					entity := ecs_create_entity()
 					transform := ecs_add_transform(entity)
 					light := ecs_add_light(entity, .POINT)
-					append(&current_scene.entities, entity)
-					editor.selected_entity = entity
+					if transform != nil && light != nil {
+						scene_manager_add_entity(entity)
+						editor.selected_entity = entity
+					}
 				}
 				if imgui.MenuItem("Spot Light") {
-					entity := create_entity(0, 0, 0)
+					entity := ecs_create_entity()
 					transform := ecs_add_transform(entity)
 					light := ecs_add_light(entity, .SPOT)
-					append(&current_scene.entities, entity)
-					editor.selected_entity = entity
+					if transform != nil && light != nil {
+						scene_manager_add_entity(entity)
+						editor.selected_entity = entity
+					}
 				}
 				imgui.EndMenu()
 			}
 			if imgui.MenuItem("Camera") {
-				entity := create_entity(0, 0, 0)
+				entity := ecs_create_entity()
 				transform := ecs_add_transform(entity)
 				camera := ecs_add_camera(entity, 45.0, 0.1, 1000.0, true) // Set as main camera
-				append(&current_scene.entities, entity)
-				editor.selected_entity = entity
+				if transform != nil && camera != nil {
+					scene_manager_add_entity(entity)
+					editor.selected_entity = entity
+				}
 			}
 			imgui.Separator()
 			if imgui.MenuItem("Delete Selected", "Delete") {
