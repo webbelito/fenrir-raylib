@@ -163,11 +163,11 @@ engine_init :: proc(config: Engine_Config) -> bool {
 	// Initialize asset manager
 	asset_manager_init()
 
-	// Initialize scene system
-	scene_init()
+	// Initialize scene manager
+	scene_manager_init()
 
 	// Create a new empty scene
-	if !scene_new("Untitled") {
+	if !scene_manager_new("Untitled") {
 		log_error(.ENGINE, "Failed to create initial scene")
 		return false
 	}
@@ -198,7 +198,11 @@ engine_shutdown :: proc() {
 		return
 	}
 
-	log_info(.ENGINE, "Shutting down engine")
+	// Shutdown scene manager
+	scene_manager_shutdown()
+
+	// Shutdown component system
+	component_system_shutdown()
 
 	// Shutdown entity manager
 	ecs_shutdown()
@@ -206,13 +210,11 @@ engine_shutdown :: proc() {
 	// Shutdown asset manager
 	asset_manager_shutdown()
 
-	// Close window
-	raylib.CloseWindow()
-
 	engine.initialized = false
 	engine.running = false
+	engine.playing = false
 
-	log_info(.ENGINE, "Engine shut down successfully")
+	log_info(.ENGINE, "Engine shutdown complete")
 }
 
 // Update the engine
@@ -245,7 +247,7 @@ engine_update :: proc() {
 			}
 		} else if engine.playing {
 			// Game camera controls
-			main_camera := scene_get_main_camera()
+			main_camera := scene_manager_get_main_camera()
 			if main_camera != 0 {
 				camera := ecs_get_camera(main_camera)
 				transform := ecs_get_transform(main_camera)
@@ -270,7 +272,7 @@ engine_update :: proc() {
 
 	// Update scene
 	if scene_manager_is_loaded() {
-		scene_update()
+		scene_manager_update()
 	}
 
 	// Update editor
@@ -290,20 +292,20 @@ engine_render :: proc() {
 		raylib.BeginMode3D(engine.editor_camera)
 		{
 			// Render scene
-			scene_render()
+			scene_manager_render()
 		}
 		raylib.EndMode3D()
 	} else if engine.playing {
 		// Use game camera
-		main_camera := scene_get_main_camera()
+		main_camera := scene_manager_get_main_camera()
 		if main_camera != 0 {
 			camera := ecs_get_camera(main_camera)
 			if camera != nil && camera.enabled {
-				raylib_camera := scene_get_camera()
+				raylib_camera := scene_manager_get_camera()
 				raylib.BeginMode3D(raylib_camera)
 				{
 					// Render scene
-					scene_render()
+					scene_manager_render()
 				}
 				raylib.EndMode3D()
 			}

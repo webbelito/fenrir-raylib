@@ -408,7 +408,7 @@ render_file_browser :: proc() {
 						path = fmt.tprintf("%s.json", path)
 					}
 					log_info(.ENGINE, "Attempting to open scene: %s", path)
-					if scene_load(path) {
+					if scene_manager_load(path) {
 						editor.scene_path = path
 						editor.show_open_dialog = false
 						log_info(.ENGINE, "Successfully opened scene: %s", path)
@@ -458,7 +458,7 @@ render_save_dialog :: proc() {
 
 				// Create the save path
 				save_path := fmt.tprintf("assets/scenes/%s.json", scene_name)
-				if scene_save(save_path) {
+				if scene_manager_save(save_path) {
 					editor.scene_path = save_path
 					editor.show_save_dialog = false
 				}
@@ -478,7 +478,7 @@ render_save_dialog :: proc() {
 
 				// Create the save path
 				save_path := fmt.tprintf("assets/scenes/%s.json", scene_name)
-				if scene_save(save_path) {
+				if scene_manager_save(save_path) {
 					editor.scene_path = save_path
 					editor.show_save_dialog = false
 				}
@@ -503,25 +503,24 @@ editor_render :: proc() {
 	if imgui.BeginMainMenuBar() {
 		// File menu
 		if imgui.BeginMenu("File") {
-			if imgui.MenuItem("New Scene", "Ctrl+N") {
-				// Create new scene
-				scene_new("New Scene")
+			if imgui.MenuItem("New Scene") {
+				scene_manager_new("New Scene")
 				editor.scene_path = ""
 			}
-			if imgui.MenuItem("Open Scene", "Ctrl+O") {
+			if imgui.MenuItem("Open Scene") {
 				scan_directory(editor.current_dir) // Refresh the list
 				editor.show_open_dialog = true
 			}
-			if imgui.MenuItem("Save Scene", "Ctrl+S") {
+			if imgui.MenuItem("Save Scene") {
 				if editor.scene_path == "" {
 					editor.show_save_dialog = true
 					// Initialize the name buffer with the current scene name
 					copy_from_string(editor.save_dialog_name[:], scene_manager.current_scene.name)
 				} else {
-					scene_save(editor.scene_path)
+					scene_manager_save(editor.scene_path)
 				}
 			}
-			if imgui.MenuItem("Save Scene As...", "Ctrl+Shift+S") {
+			if imgui.MenuItem("Save Scene As...") {
 				editor.show_save_dialog = true
 				// Initialize the name buffer with the current scene name
 				copy_from_string(editor.save_dialog_name[:], scene_manager.current_scene.name)
