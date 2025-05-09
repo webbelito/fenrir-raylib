@@ -26,7 +26,7 @@ Editor_State :: struct {
 	file_list:        [dynamic]string, // List of files in current directory
 	selected_file:    string, // Currently selected file
 	renaming_node:    Entity,
-	rename_buffer:    [dynamic]u8,
+	rename_buffer:    [256]u8, // Fixed-size buffer for renaming
 }
 
 editor: Editor_State
@@ -37,14 +37,23 @@ editor_init :: proc() -> bool {
 		return true
 	}
 
+	// Initialize all buffers with zeros
+	for i in 0 ..< len(editor.save_dialog_name) {
+		editor.save_dialog_name[i] = 0
+	}
+
 	editor = Editor_State {
 		initialized      = true,
 		scene_tree_open  = true,
 		inspector_open   = true,
 		scene_path       = "",
+		show_save_dialog = false,
+		show_open_dialog = false,
 		available_scenes = make([dynamic]string),
 		current_dir      = "assets/scenes",
 		file_list        = make([dynamic]string),
+		selected_file    = "",
+		renaming_node    = 0,
 	}
 
 	log_info(.ENGINE, "Editor initialized")
@@ -94,6 +103,80 @@ editor_update :: proc() {
 			return
 		}
 	}
+
+	// Handle editor input
+	editor_handle_input()
+
+	// Render save dialog
+	if editor.show_save_dialog {
+		if imgui.Begin("Save Scene", &editor.show_save_dialog) {
+			imgui.Text("Enter scene name:")
+			if imgui.InputText(
+				"##SceneName",
+				cstring(raw_data(editor.save_dialog_name[:])),
+				len(editor.save_dialog_name),
+			) {
+				// Handle input
+			}
+			if imgui.Button("Save") {
+				scene_name := string(editor.save_dialog_name[:])
+				if len(scene_name) > 0 {
+					scene_manager_new(scene_name)
+					editor.show_save_dialog = false
+				}
+			}
+			imgui.SameLine()
+			if imgui.Button("Cancel") {
+				editor.show_save_dialog = false
+			}
+			imgui.End()
+		}
+	}
+
+	// Render open dialog
+	if editor.show_open_dialog {
+		// Center the window
+		viewport := imgui.GetMainViewport()
+		center := viewport.WorkPos + viewport.WorkSize * 0.5
+		size := imgui.Vec2{400, 300}
+		pos := center - size * 0.5
+
+		imgui.SetNextWindowPos(pos, .None)
+		imgui.SetNextWindowSize(size, .None)
+
+		if imgui.Begin("Open Scene", &editor.show_open_dialog, {.NoCollapse}) {
+			// Render file list
+			for file in editor.file_list {
+				if imgui.Selectable(strings.clone_to_cstring(file), editor.selected_file == file) {
+					editor.selected_file = file
+				}
+			}
+
+			// Render buttons
+			if imgui.Button("Open") {
+				if len(editor.selected_file) > 0 {
+					// Ensure we have a proper path with the filename
+					path := fmt.tprintf("%s/%s", editor.current_dir, editor.selected_file)
+					if !strings.has_suffix(path, ".json") {
+						path = fmt.tprintf("%s.json", path)
+					}
+					log_info(.ENGINE, "Attempting to open scene: %s", path)
+					if scene_manager_load(path) {
+						editor.scene_path = path
+						editor.show_open_dialog = false
+						log_info(.ENGINE, "Successfully opened scene: %s", path)
+					} else {
+						log_error(.ENGINE, "Failed to open scene: %s", path)
+					}
+				}
+			}
+			imgui.SameLine()
+			if imgui.Button("Cancel") {
+				editor.show_open_dialog = false
+			}
+			imgui.End()
+		}
+	}
 }
 
 // Render a node in the scene tree
@@ -123,16 +206,24 @@ render_node :: proc(node_id: Entity) {
 				// Handle double-click for renaming
 				if imgui.IsItemHovered() && imgui.IsMouseDoubleClicked(.Left) {
 					editor.renaming_node = node_id
-					editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
-					copy_from_string(editor.rename_buffer[:], node.name)
+					// Clear the buffer
+					for i in 0 ..< len(editor.rename_buffer) {
+						editor.rename_buffer[i] = 0
+					}
+					// Copy the current name
+					copy(editor.rename_buffer[:], node.name)
 				}
 
 				// Render context menu
 				if imgui.BeginPopupContextItem() {
 					if imgui.MenuItem("Rename") {
 						editor.renaming_node = node_id
-						editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
-						copy_from_string(editor.rename_buffer[:], node.name)
+						// Clear the buffer
+						for i in 0 ..< len(editor.rename_buffer) {
+							editor.rename_buffer[i] = 0
+						}
+						// Copy the current name
+						copy(editor.rename_buffer[:], node.name)
 					}
 					if imgui.MenuItem("Add Child") {
 						if new_node_id := scene_manager_create_node("New Node", node_id);
@@ -171,12 +262,10 @@ render_node :: proc(node_id: Entity) {
 							scene_manager.current_scene.dirty = true
 						}
 						editor.renaming_node = 0
-						delete(editor.rename_buffer)
 					}
 					// Cancel renaming on escape
 					if imgui.IsKeyPressed(.Escape) {
 						editor.renaming_node = 0
-						delete(editor.rename_buffer)
 					}
 				}
 
@@ -195,16 +284,24 @@ render_node :: proc(node_id: Entity) {
 			// Handle double-click for renaming
 			if imgui.IsItemHovered() && imgui.IsMouseDoubleClicked(.Left) {
 				editor.renaming_node = node_id
-				editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
-				copy_from_string(editor.rename_buffer[:], node.name)
+				// Clear the buffer
+				for i in 0 ..< len(editor.rename_buffer) {
+					editor.rename_buffer[i] = 0
+				}
+				// Copy the current name
+				copy(editor.rename_buffer[:], node.name)
 			}
 
 			// Render context menu for leaf nodes too
 			if imgui.BeginPopupContextItem() {
 				if imgui.MenuItem("Rename") {
 					editor.renaming_node = node_id
-					editor.rename_buffer = make([dynamic]u8, len(node.name) + 1)
-					copy_from_string(editor.rename_buffer[:], node.name)
+					// Clear the buffer
+					for i in 0 ..< len(editor.rename_buffer) {
+						editor.rename_buffer[i] = 0
+					}
+					// Copy the current name
+					copy(editor.rename_buffer[:], node.name)
 				}
 				if imgui.MenuItem("Add Child") {
 					if new_node_id := scene_manager_create_node("New Node", node_id);
@@ -243,12 +340,10 @@ render_node :: proc(node_id: Entity) {
 						scene_manager.current_scene.dirty = true
 					}
 					editor.renaming_node = 0
-					delete(editor.rename_buffer)
 				}
 				// Cancel renaming on escape
 				if imgui.IsKeyPressed(.Escape) {
 					editor.renaming_node = 0
-					delete(editor.rename_buffer)
 				}
 			}
 		}
@@ -360,72 +455,6 @@ render_inspector :: proc() {
 	}
 }
 
-// Render the file browser dialog
-render_file_browser :: proc() {
-	if editor.show_open_dialog {
-		// Scan directory if needed
-		if len(editor.file_list) == 0 {
-			scan_directory(editor.current_dir)
-		}
-
-		imgui.SetNextWindowPos(imgui.GetIO().DisplaySize * 0.5, .Always, {0.5, 0.5})
-		imgui.SetNextWindowSize({600, 400})
-		if imgui.Begin(
-			"Open Scene###OpenSceneWindow",
-			&editor.show_open_dialog,
-			{.AlwaysAutoResize, .NoCollapse},
-		) {
-			// Current directory
-			imgui.Text("Current Directory: %s", editor.current_dir)
-			imgui.Separator()
-
-			// Display files
-			for file, i in editor.file_list {
-				file_cstr := strings.clone_to_cstring(file)
-				defer delete(file_cstr)
-				label := fmt.tprintf("##FileItem%d", i)
-				label_cstr := strings.clone_to_cstring(label)
-				defer delete(label_cstr)
-
-				// Make the selectable area wider
-				imgui.PushItemWidth(-1)
-				if imgui.Selectable(label_cstr, file == editor.selected_file, {.SpanAllColumns}) {
-					editor.selected_file = file
-				}
-				imgui.PopItemWidth()
-
-				imgui.SameLine()
-				imgui.Text(file_cstr)
-			}
-
-			imgui.Separator()
-			// Buttons
-			if imgui.Button("Open###OpenSceneOpenButton") {
-				if editor.selected_file != "" {
-					// Ensure we have a proper path with the filename
-					path := fmt.tprintf("%s/%s", editor.current_dir, editor.selected_file)
-					if !strings.has_suffix(path, ".json") {
-						path = fmt.tprintf("%s.json", path)
-					}
-					log_info(.ENGINE, "Attempting to open scene: %s", path)
-					if scene_manager_load(path) {
-						editor.scene_path = path
-						editor.show_open_dialog = false
-						log_info(.ENGINE, "Successfully opened scene: %s", path)
-					} else {
-						log_error(.ENGINE, "Failed to open scene: %s", path)
-					}
-				}
-			}
-			imgui.SameLine()
-			if imgui.Button("Cancel###OpenSceneCancelButton") {
-				editor.show_open_dialog = false
-			}
-		}
-		imgui.End()
-	}
-}
-
 // Render the save dialog
 render_save_dialog :: proc() {
 	if editor.show_save_dialog {
@@ -443,7 +472,7 @@ render_save_dialog :: proc() {
 			if imgui.InputText(
 				"Scene Name###SaveSceneNameInput",
 				cstring(raw_data(editor.save_dialog_name[:])),
-				size_of(editor.save_dialog_name),
+				len(editor.save_dialog_name),
 				imgui.InputTextFlags{.EnterReturnsTrue},
 			) {
 				// Convert the name buffer to a string
@@ -487,6 +516,10 @@ render_save_dialog :: proc() {
 			imgui.SameLine()
 			if imgui.Button("Cancel###SaveSceneCancelButton") {
 				editor.show_save_dialog = false
+				// Clear the buffer when canceling
+				for i in 0 ..< len(editor.save_dialog_name) {
+					editor.save_dialog_name[i] = 0
+				}
 			}
 		}
 		imgui.End()
@@ -514,16 +547,28 @@ editor_render :: proc() {
 			if imgui.MenuItem("Save Scene") {
 				if editor.scene_path == "" {
 					editor.show_save_dialog = true
-					// Initialize the name buffer with the current scene name
-					copy_from_string(editor.save_dialog_name[:], scene_manager.current_scene.name)
+					// Initialize the name buffer with zeros
+					for i in 0 ..< len(editor.save_dialog_name) {
+						editor.save_dialog_name[i] = 0
+					}
+					// Copy current scene name if it exists
+					if scene_manager.current_scene.name != "" {
+						copy(editor.save_dialog_name[:], scene_manager.current_scene.name)
+					}
 				} else {
 					scene_manager_save(editor.scene_path)
 				}
 			}
 			if imgui.MenuItem("Save Scene As...") {
 				editor.show_save_dialog = true
-				// Initialize the name buffer with the current scene name
-				copy_from_string(editor.save_dialog_name[:], scene_manager.current_scene.name)
+				// Initialize the name buffer with zeros
+				for i in 0 ..< len(editor.save_dialog_name) {
+					editor.save_dialog_name[i] = 0
+				}
+				// Copy current scene name if it exists
+				if scene_manager.current_scene.name != "" {
+					copy(editor.save_dialog_name[:], scene_manager.current_scene.name)
+				}
 			}
 			imgui.Separator()
 			if imgui.MenuItem("Exit", "Alt+F4") {
@@ -534,11 +579,11 @@ editor_render :: proc() {
 
 		// Edit menu
 		if imgui.BeginMenu("Edit") {
-			if imgui.MenuItem("Undo", "Ctrl+Z") {
-				// TODO: Implement undo
+			if imgui.MenuItem("Undo", "Ctrl+Z", false, command_manager_can_undo()) {
+				command_manager_undo()
 			}
-			if imgui.MenuItem("Redo", "Ctrl+Y") {
-				// TODO: Implement redo
+			if imgui.MenuItem("Redo", "Ctrl+Y", false, command_manager_can_redo()) {
+				command_manager_redo()
 			}
 			imgui.EndMenu()
 		}
@@ -637,7 +682,6 @@ editor_render :: proc() {
 	}
 
 	// Render dialogs
-	render_file_browser()
 	render_save_dialog()
 
 	// Get the main window size
@@ -697,5 +741,20 @@ editor_is_active :: proc() -> bool {
 		return editor.initialized
 	} else {
 		return false
+	}
+}
+
+// Handle editor input
+editor_handle_input :: proc() {
+	// Handle keyboard shortcuts
+	if imgui.IsKeyDown(.LeftCtrl) || imgui.IsKeyDown(.RightCtrl) {
+		// Undo (Ctrl+Z)
+		if imgui.IsKeyPressed(.Z) {
+			command_manager_undo()
+		}
+		// Redo (Ctrl+Y)
+		if imgui.IsKeyPressed(.Y) {
+			command_manager_redo()
+		}
 	}
 }

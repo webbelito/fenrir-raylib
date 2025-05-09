@@ -205,6 +205,9 @@ scene_manager_new :: proc(name: string) -> bool {
 		scene_manager_cleanup()
 	}
 
+	// Reset entity manager to ensure clean entity IDs
+	entity_manager.next_entity_id = 1
+
 	// Initialize new scene with default values
 	scene_manager.current_scene = Scene {
 		name     = strings.clone(name),
@@ -426,6 +429,9 @@ scene_manager_load :: proc(path: string) -> bool {
 		scene_manager_unload()
 	}
 
+	// Reset entity manager to ensure clean entity IDs
+	entity_manager.next_entity_id = 1
+
 	// Check if file exists
 	if !os.exists(path) {
 		log_error(.ENGINE, "Scene file does not exist: %s", path)
@@ -532,37 +538,25 @@ scene_manager_load :: proc(path: string) -> bool {
 		node := Node {
 			id        = entity,
 			name      = strings.clone(entity_data.name),
-			parent_id = 0, // Will be set in second pass
+			parent_id = 0, // Always parent to root initially
 			children  = make([dynamic]Entity),
 			expanded  = true,
 		}
 		scene_manager.current_scene.nodes[entity] = node
 		append(&scene_manager.current_scene.entities, entity)
-	}
 
-	// Second pass: Set up parent-child relationships
-	for entity_data in scene_data.entities {
-		if entity, ok := entity_map[entity_data.name]; ok {
-			// Get the node
-			if node, ok := scene_manager.current_scene.nodes[entity]; ok {
-				// If this is a child node, add it to its parent's children
-				if node.parent_id != 0 {
-					if parent, ok := scene_manager.current_scene.nodes[node.parent_id]; ok {
-						append(&parent.children, entity)
-						scene_manager.current_scene.nodes[node.parent_id] = parent
-					}
-				} else {
-					// If no parent specified, add to root
-					if root, ok := scene_manager.current_scene.nodes[0]; ok {
-						append(&root.children, entity)
-						scene_manager.current_scene.nodes[0] = root
-					}
-				}
-			}
+		// Add to root's children
+		if root, ok := scene_manager.current_scene.nodes[0]; ok {
+			append(&root.children, entity)
+			scene_manager.current_scene.nodes[0] = root
 		}
 	}
 
 	log_info(.ENGINE, "Loaded scene: %s", path)
+
+	// Select root node after loading
+	editor.selected_entity = 0
+
 	return true
 }
 
@@ -712,6 +706,9 @@ scene_manager_unload :: proc() {
 
 	log_info(.ENGINE, "Unloading scene: %s", scene_manager.current_scene.name)
 
+	// Clear command stacks
+	command_manager_clear()
+
 	// Destroy all entities
 	for entity in scene_manager.current_scene.entities {
 		ecs_destroy_entity(entity)
@@ -742,6 +739,8 @@ scene_manager_unload :: proc() {
 
 	// Reset entity manager
 	entity_manager.next_entity_id = 1
+
+	log_info(.ENGINE, "Scene unloaded")
 }
 
 // Add an entity to the current scene

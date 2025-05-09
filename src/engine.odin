@@ -154,7 +154,10 @@ engine_init :: proc(config: Engine_Config) -> bool {
 
 	log_info(.ENGINE, "Initializing engine")
 
-	// Initialize entity manager
+	// Initialize command manager
+	command_manager_init()
+
+	// Initialize ECS
 	ecs_init()
 
 	// Initialize component system
@@ -198,17 +201,22 @@ engine_shutdown :: proc() {
 		return
 	}
 
-	// Shutdown scene manager
-	scene_manager_shutdown()
+	log_info(.ENGINE, "Shutting down engine")
+
+	// Shutdown command manager
+	command_manager_shutdown()
+
+	// Shutdown ECS
+	ecs_shutdown()
 
 	// Shutdown component system
 	component_system_shutdown()
 
-	// Shutdown entity manager
-	ecs_shutdown()
-
 	// Shutdown asset manager
 	asset_manager_shutdown()
+
+	// Shutdown scene manager
+	scene_manager_shutdown()
 
 	engine.initialized = false
 	engine.running = false
