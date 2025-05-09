@@ -26,11 +26,18 @@ Command_Node_Duplicate :: struct {
 	name:        string,
 }
 
+Command_Node_Rename :: struct {
+	entity_id: Entity,
+	old_name:  string,
+	new_name:  string,
+}
+
 // Command type identification
 Command_Type :: enum {
 	Add,
 	Delete,
 	Duplicate,
+	Rename,
 }
 
 // Get command type for logging
@@ -41,6 +48,8 @@ get_command_type :: proc(cmd: ^Command) -> Command_Type {
 		return .Delete
 	} else if cmd.vtable == &node_duplicate_vtable {
 		return .Duplicate
+	} else if cmd.vtable == &node_rename_vtable {
+		return .Rename
 	}
 	return .Add // Default case
 }
@@ -59,6 +68,10 @@ get_command_name :: proc(cmd: ^Command) -> string {
 	case .Duplicate:
 		if data := cast(^Command_Node_Duplicate)cmd.data; data != nil {
 			return fmt.tprintf("Duplicate Node '%s'", data.name)
+		}
+	case .Rename:
+		if data := cast(^Command_Node_Rename)cmd.data; data != nil {
+			return fmt.tprintf("Rename Node '%s' to '%s'", data.old_name, data.new_name)
 		}
 	}
 	return "Unknown Command"
@@ -319,6 +332,68 @@ command_node_duplicate_copy :: proc(cmd: ^Command) -> Command {
 	return Command{vtable = &node_duplicate_vtable, data = new_data}
 }
 
+// Rename command implementations
+command_node_rename_execute :: proc(cmd: ^Command) {
+	data := cast(^Command_Node_Rename)cmd.data
+	if data == nil do return
+
+	if node, ok := scene_manager.current_scene.nodes[data.entity_id]; ok {
+		data.old_name = strings.clone(node.name)
+		delete(node.name)
+		node.name = strings.clone(data.new_name)
+		scene_manager.current_scene.nodes[data.entity_id] = node
+		scene_manager.current_scene.dirty = true
+	}
+}
+
+command_node_rename_undo :: proc(cmd: ^Command) {
+	data := cast(^Command_Node_Rename)cmd.data
+	if data == nil do return
+
+	if node, ok := scene_manager.current_scene.nodes[data.entity_id]; ok {
+		delete(node.name)
+		node.name = strings.clone(data.old_name)
+		scene_manager.current_scene.nodes[data.entity_id] = node
+		scene_manager.current_scene.dirty = true
+	}
+}
+
+command_node_rename_redo :: proc(cmd: ^Command) {
+	command_node_rename_execute(cmd)
+}
+
+command_node_rename_destroy :: proc(cmd: ^Command) {
+	data := cast(^Command_Node_Rename)cmd.data
+	if data == nil do return
+
+	delete(data.old_name)
+	delete(data.new_name)
+	free(data)
+}
+
+command_node_rename_copy :: proc(cmd: ^Command) -> Command {
+	data := cast(^Command_Node_Rename)cmd.data
+	if data == nil do return cmd^
+
+	new_data := new(Command_Node_Rename)
+	new_data^ = Command_Node_Rename {
+		entity_id = data.entity_id,
+		old_name  = strings.clone(data.old_name),
+		new_name  = strings.clone(data.new_name),
+	}
+
+	return Command{vtable = &node_rename_vtable, data = new_data}
+}
+
+// Static vtables for each command type
+node_rename_vtable := Command_VTable {
+	execute = command_node_rename_execute,
+	undo    = command_node_rename_undo,
+	redo    = command_node_rename_redo,
+	destroy = command_node_rename_destroy,
+	copy    = command_node_rename_copy,
+}
+
 // Command creation functions
 command_create_node_add :: proc(name: string, parent_id: Entity) -> Command {
 	// Verify parent exists
@@ -361,4 +436,15 @@ command_create_node_duplicate :: proc(entity_id: Entity) -> Command {
 	}
 
 	return Command{vtable = &node_duplicate_vtable, data = data}
+}
+
+command_create_node_rename :: proc(entity_id: Entity, new_name: string) -> Command {
+	data := new(Command_Node_Rename)
+	data^ = Command_Node_Rename {
+		entity_id = entity_id,
+		old_name  = "",
+		new_name  = strings.clone(new_name),
+	}
+
+	return Command{vtable = &node_rename_vtable, data = data}
 }

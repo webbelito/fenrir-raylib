@@ -238,13 +238,10 @@ render_node :: proc(node_id: Entity) {
 						len(editor.rename_buffer),
 						imgui.InputTextFlags{.EnterReturnsTrue},
 					) {
-						// Update node name
-						if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
-							delete(node.name)
-							node.name = strings.clone(string(editor.rename_buffer[:]))
-							scene_manager.current_scene.nodes[node_id] = node
-							scene_manager.current_scene.dirty = true
-						}
+						// Update node name using command
+						new_name := string(editor.rename_buffer[:])
+						cmd := command_create_node_rename(node_id, new_name)
+						command_manager_execute(&cmd)
 						editor.renaming_node = 0
 					}
 					// Cancel renaming on escape
@@ -318,13 +315,10 @@ render_node :: proc(node_id: Entity) {
 					len(editor.rename_buffer),
 					imgui.InputTextFlags{.EnterReturnsTrue},
 				) {
-					// Update node name
-					if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
-						delete(node.name)
-						node.name = strings.clone(string(editor.rename_buffer[:]))
-						scene_manager.current_scene.nodes[node_id] = node
-						scene_manager.current_scene.dirty = true
-					}
+					// Update node name using command
+					new_name := string(editor.rename_buffer[:])
+					cmd := command_create_node_rename(node_id, new_name)
+					command_manager_execute(&cmd)
 					editor.renaming_node = 0
 				}
 				// Cancel renaming on escape
