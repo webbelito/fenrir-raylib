@@ -109,9 +109,6 @@ scene_manager_init :: proc() {
 	scene_manager.current_scene.nodes[0] = root_node
 
 	// Initialize the available scenes list
-	scene_manager.available_scenes = make([dynamic]string)
-
-	// Scan for available scenes
 	scene_manager_scan_available_scenes()
 
 	log_info(.ENGINE, "Scene manager initialized")
@@ -219,10 +216,11 @@ scene_manager_new :: proc(name: string) -> bool {
 		root_id  = 0,
 	}
 
-	// Create root node
+	// Create root node with scene name + "(Root Node)"
+	root_name := fmt.tprintf("%s (Root Node)", name)
 	root_node := Node {
 		id        = 0,
-		name      = "Root",
+		name      = strings.clone(root_name),
 		parent_id = 0,
 		children  = make([dynamic]Entity),
 		expanded  = true,
@@ -453,18 +451,23 @@ scene_manager_load :: proc(path: string) -> bool {
 		return false
 	}
 
+	// Get scene name from filename
+	filename := filepath.base(path)
+	scene_name := strings.trim_suffix(filename, filepath.ext(filename))
+
 	// Initialize new scene
-	scene_manager.current_scene.name = strings.clone(scene_data.name)
+	scene_manager.current_scene.name = strings.clone(scene_name)
 	scene_manager.current_scene.path = strings.clone(path)
 	scene_manager.current_scene.loaded = true
 	scene_manager.current_scene.dirty = false
 	scene_manager.current_scene.nodes = make(map[Entity]Node)
 	scene_manager.current_scene.entities = make([dynamic]Entity)
 
-	// Create root node
+	// Create root node with scene name + "(Root Node)"
+	root_name := fmt.tprintf("%s (Root Node)", scene_name)
 	root_node := Node {
 		id        = 0,
-		name      = "Root",
+		name      = strings.clone(root_name),
 		parent_id = 0,
 		children  = make([dynamic]Entity),
 		expanded  = true,

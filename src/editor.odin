@@ -537,7 +537,7 @@ editor_render :: proc() {
 		// File menu
 		if imgui.BeginMenu("File") {
 			if imgui.MenuItem("New Scene") {
-				scene_manager_new("New Scene")
+				scene_manager_new("Untitled")
 				editor.scene_path = ""
 			}
 			if imgui.MenuItem("Open Scene") {
