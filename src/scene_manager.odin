@@ -101,7 +101,7 @@ scene_manager_init :: proc() {
 	// Create root node
 	root_node := Node {
 		id        = 0,
-		name      = strings.clone(scene_manager.current_scene.name),
+		name      = strings.clone(fmt.tprintf("%s (Root Node)", scene_manager.current_scene.name)),
 		parent_id = 0, // Root is its own parent
 		children  = make([dynamic]Entity),
 		expanded  = true, // Root node starts expanded
@@ -230,7 +230,7 @@ scene_manager_new :: proc(name: string) -> bool {
 	// Create root node
 	root_node := Node {
 		id        = 0,
-		name      = strings.clone(name),
+		name      = strings.clone(fmt.tprintf("%s (Root Node)", name)),
 		parent_id = 0,
 		children  = make([dynamic]Entity),
 		expanded  = true,
@@ -452,7 +452,7 @@ scene_manager_load :: proc(path: string) -> bool {
 	// Create root node
 	root_node := Node {
 		id        = 0,
-		name      = strings.clone(scene_name),
+		name      = strings.clone(fmt.tprintf("%s (Root Node)", scene_name)),
 		parent_id = 0,
 		children  = make([dynamic]Entity),
 		expanded  = true,
@@ -1073,10 +1073,35 @@ scene_manager_render :: proc() {
 			continue
 		}
 
+		// Get world transform
+		world_pos, world_rot, world_scale := get_world_transform(entity)
+
 		// Get renderer component
 		renderer := ecs_get_renderer(entity)
+
+		// In editor mode, we want to visualize all entities
 		if renderer == nil {
-			log_warning(.ENGINE, "Entity %d has no renderer component", entity)
+			// Draw a simple gizmo for entities without renderer
+			gizmo_size: f32 = 0.5
+
+			// Draw a small cube at the entity's position
+			raylib.DrawCube(world_pos, gizmo_size, gizmo_size, gizmo_size, raylib.GRAY)
+
+			// Draw coordinate axes for the gizmo
+			axis_length: f32 = gizmo_size * 2
+			raylib.DrawLine3D(world_pos, world_pos + {axis_length, 0, 0}, raylib.RED)
+			raylib.DrawLine3D(world_pos, world_pos + {0, axis_length, 0}, raylib.GREEN)
+			raylib.DrawLine3D(world_pos, world_pos + {0, 0, axis_length}, raylib.BLUE)
+
+			// Draw a wireframe cube to show the entity's bounds
+			raylib.DrawCubeWires(
+				world_pos,
+				gizmo_size * 2,
+				gizmo_size * 2,
+				gizmo_size * 2,
+				raylib.DARKGRAY,
+			)
+
 			continue
 		}
 
@@ -1126,14 +1151,11 @@ scene_manager_render :: proc() {
 			continue
 		}
 
-		// Set model transform
-		rotation_matrix := raylib.MatrixRotateXYZ(transform.rotation)
-		translation_matrix := raylib.MatrixTranslate(
-			transform.position.x,
-			transform.position.y,
-			transform.position.z,
-		)
-		model.transform = rotation_matrix * translation_matrix
+		// Set model transform using world transform
+		rotation_matrix := raylib.MatrixRotateXYZ(world_rot)
+		translation_matrix := raylib.MatrixTranslate(world_pos.x, world_pos.y, world_pos.z)
+		scale_matrix := raylib.MatrixScale(world_scale.x, world_scale.y, world_scale.z)
+		model.transform = rotation_matrix * translation_matrix * scale_matrix
 
 		// Draw model
 		raylib.DrawModel(model^, {0, 0, 0}, 1.0, raylib.WHITE)

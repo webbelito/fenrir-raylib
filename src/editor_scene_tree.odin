@@ -33,7 +33,6 @@ editor_scene_tree_init :: proc() -> bool {
 
 	// Ensure root node is properly initialized
 	if root, ok := scene_manager.current_scene.nodes[0]; ok {
-		root.name = "Root"
 		root.expanded = true
 		scene_manager.current_scene.nodes[0] = root
 	}

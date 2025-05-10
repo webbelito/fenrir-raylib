@@ -84,14 +84,52 @@ create_transform_command :: proc(
 	command_manager_execute(&cmd)
 }
 
-// Render transform component in inspector
+// Get the world transform of an entity
+get_world_transform :: proc(
+	entity: Entity,
+) -> (
+	position: raylib.Vector3,
+	rotation: raylib.Vector3,
+	scale: raylib.Vector3,
+) {
+	if transform := ecs_get_transform(entity); transform != nil {
+		position = transform.position
+		rotation = transform.rotation
+		scale = transform.scale
+
+		// Get the node to find its parent
+		if node, ok := scene_manager.current_scene.nodes[entity]; ok {
+			// If this entity has a parent, multiply by parent's transform
+			if node.parent_id != 0 && node.parent_id != entity {
+				parent_pos, parent_rot, parent_scale := get_world_transform(node.parent_id)
+
+				// Calculate world position
+				rotation_matrix := raylib.MatrixRotateXYZ(parent_rot)
+				position = raylib.Vector3Transform(position, rotation_matrix)
+				position += parent_pos
+
+				// Combine rotations
+				rotation += parent_rot
+
+				// Combine scales
+				scale *= parent_scale
+			}
+		}
+	}
+	return
+}
+
+// Update the transform component to use world space
 transform_render_inspector :: proc(transform: ^Transform_Component) {
 	if imgui.CollapsingHeader("Transform") {
+		// Get world transform
+		world_pos, world_rot, world_scale := get_world_transform(transform.entity)
+
 		// Position section
-		imgui.Text("Position")
+		imgui.Text("Position (World)")
 		imgui.PushItemWidth(60) // Set width for input fields
 
-		new_position := transform.position
+		new_position := world_pos
 
 		// X input
 		imgui.AlignTextToFramePadding()
@@ -106,7 +144,20 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 				drag_state.dragging_position = true
 				drag_state.start_position = transform.position
 			}
-			transform.position = new_position
+
+			// Convert world position to local position
+			if node, ok := scene_manager.current_scene.nodes[transform.entity]; ok {
+				if node.parent_id != 0 && node.parent_id != transform.entity {
+					parent_pos, parent_rot, _ := get_world_transform(node.parent_id)
+					// Convert world position to local position
+					local_pos := new_position - parent_pos
+					rotation_matrix := raylib.MatrixRotateXYZ(-parent_rot)
+					local_pos = raylib.Vector3Transform(local_pos, rotation_matrix)
+					transform.position = local_pos
+				} else {
+					transform.position = new_position
+				}
+			}
 		} else if drag_state.dragging_position && !imgui.IsMouseDown(.Left) {
 			// Create command when drag ends
 			drag_state.dragging_position = false
@@ -136,7 +187,20 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 				drag_state.dragging_position = true
 				drag_state.start_position = transform.position
 			}
-			transform.position = new_position
+
+			// Convert world position to local position
+			if node, ok := scene_manager.current_scene.nodes[transform.entity]; ok {
+				if node.parent_id != 0 && node.parent_id != transform.entity {
+					parent_pos, parent_rot, _ := get_world_transform(node.parent_id)
+					// Convert world position to local position
+					local_pos := new_position - parent_pos
+					rotation_matrix := raylib.MatrixRotateXYZ(-parent_rot)
+					local_pos = raylib.Vector3Transform(local_pos, rotation_matrix)
+					transform.position = local_pos
+				} else {
+					transform.position = new_position
+				}
+			}
 		} else if drag_state.dragging_position && !imgui.IsMouseDown(.Left) {
 			// Create command when drag ends
 			drag_state.dragging_position = false
@@ -166,7 +230,20 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 				drag_state.dragging_position = true
 				drag_state.start_position = transform.position
 			}
-			transform.position = new_position
+
+			// Convert world position to local position
+			if node, ok := scene_manager.current_scene.nodes[transform.entity]; ok {
+				if node.parent_id != 0 && node.parent_id != transform.entity {
+					parent_pos, parent_rot, _ := get_world_transform(node.parent_id)
+					// Convert world position to local position
+					local_pos := new_position - parent_pos
+					rotation_matrix := raylib.MatrixRotateXYZ(-parent_rot)
+					local_pos = raylib.Vector3Transform(local_pos, rotation_matrix)
+					transform.position = local_pos
+				} else {
+					transform.position = new_position
+				}
+			}
 		} else if drag_state.dragging_position && !imgui.IsMouseDown(.Left) {
 			// Create command when drag ends
 			drag_state.dragging_position = false
@@ -186,10 +263,10 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 		imgui.Separator()
 
 		// Rotation section
-		imgui.Text("Rotation")
+		imgui.Text("Rotation (World)")
 		imgui.PushItemWidth(60) // Set width for input fields
 
-		new_rotation := transform.rotation
+		new_rotation := world_rot
 
 		// X input
 		imgui.AlignTextToFramePadding()
@@ -204,7 +281,16 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 				drag_state.dragging_rotation = true
 				drag_state.start_rotation = transform.rotation
 			}
-			transform.rotation = new_rotation
+
+			// Convert world rotation to local rotation
+			if node, ok := scene_manager.current_scene.nodes[transform.entity]; ok {
+				if node.parent_id != 0 && node.parent_id != transform.entity {
+					_, parent_rot, _ := get_world_transform(node.parent_id)
+					transform.rotation = new_rotation - parent_rot
+				} else {
+					transform.rotation = new_rotation
+				}
+			}
 		} else if drag_state.dragging_rotation && !imgui.IsMouseDown(.Left) {
 			// Create command when drag ends
 			drag_state.dragging_rotation = false
@@ -234,7 +320,16 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 				drag_state.dragging_rotation = true
 				drag_state.start_rotation = transform.rotation
 			}
-			transform.rotation = new_rotation
+
+			// Convert world rotation to local rotation
+			if node, ok := scene_manager.current_scene.nodes[transform.entity]; ok {
+				if node.parent_id != 0 && node.parent_id != transform.entity {
+					_, parent_rot, _ := get_world_transform(node.parent_id)
+					transform.rotation = new_rotation - parent_rot
+				} else {
+					transform.rotation = new_rotation
+				}
+			}
 		} else if drag_state.dragging_rotation && !imgui.IsMouseDown(.Left) {
 			// Create command when drag ends
 			drag_state.dragging_rotation = false
@@ -264,7 +359,16 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 				drag_state.dragging_rotation = true
 				drag_state.start_rotation = transform.rotation
 			}
-			transform.rotation = new_rotation
+
+			// Convert world rotation to local rotation
+			if node, ok := scene_manager.current_scene.nodes[transform.entity]; ok {
+				if node.parent_id != 0 && node.parent_id != transform.entity {
+					_, parent_rot, _ := get_world_transform(node.parent_id)
+					transform.rotation = new_rotation - parent_rot
+				} else {
+					transform.rotation = new_rotation
+				}
+			}
 		} else if drag_state.dragging_rotation && !imgui.IsMouseDown(.Left) {
 			// Create command when drag ends
 			drag_state.dragging_rotation = false
@@ -284,10 +388,10 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 		imgui.Separator()
 
 		// Scale section
-		imgui.Text("Scale")
+		imgui.Text("Scale (World)")
 		imgui.PushItemWidth(60) // Set width for input fields
 
-		new_scale := transform.scale
+		new_scale := world_scale
 
 		// X input
 		imgui.AlignTextToFramePadding()
@@ -302,7 +406,16 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 				drag_state.dragging_scale = true
 				drag_state.start_scale = transform.scale
 			}
-			transform.scale = new_scale
+
+			// Convert world scale to local scale
+			if node, ok := scene_manager.current_scene.nodes[transform.entity]; ok {
+				if node.parent_id != 0 && node.parent_id != transform.entity {
+					_, _, parent_scale := get_world_transform(node.parent_id)
+					transform.scale = new_scale / parent_scale
+				} else {
+					transform.scale = new_scale
+				}
+			}
 		} else if drag_state.dragging_scale && !imgui.IsMouseDown(.Left) {
 			// Create command when drag ends
 			drag_state.dragging_scale = false
@@ -332,7 +445,16 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 				drag_state.dragging_scale = true
 				drag_state.start_scale = transform.scale
 			}
-			transform.scale = new_scale
+
+			// Convert world scale to local scale
+			if node, ok := scene_manager.current_scene.nodes[transform.entity]; ok {
+				if node.parent_id != 0 && node.parent_id != transform.entity {
+					_, _, parent_scale := get_world_transform(node.parent_id)
+					transform.scale = new_scale / parent_scale
+				} else {
+					transform.scale = new_scale
+				}
+			}
 		} else if drag_state.dragging_scale && !imgui.IsMouseDown(.Left) {
 			// Create command when drag ends
 			drag_state.dragging_scale = false
@@ -362,7 +484,16 @@ transform_render_inspector :: proc(transform: ^Transform_Component) {
 				drag_state.dragging_scale = true
 				drag_state.start_scale = transform.scale
 			}
-			transform.scale = new_scale
+
+			// Convert world scale to local scale
+			if node, ok := scene_manager.current_scene.nodes[transform.entity]; ok {
+				if node.parent_id != 0 && node.parent_id != transform.entity {
+					_, _, parent_scale := get_world_transform(node.parent_id)
+					transform.scale = new_scale / parent_scale
+				} else {
+					transform.scale = new_scale
+				}
+			}
 		} else if drag_state.dragging_scale && !imgui.IsMouseDown(.Left) {
 			// Create command when drag ends
 			drag_state.dragging_scale = false
