@@ -87,15 +87,12 @@ editor_inspector_render :: proc() {
 				scene_manager.current_scene.dirty = true
 			}
 
-			// Tags section
-			if imgui.CollapsingHeader("Tags", {imgui.TreeNodeFlag.DefaultOpen}) {
-				// Add tag button
-				if imgui.Button("Add Tag") {
+			// Tags dropdown
+			if imgui.BeginCombo("Tags", "No Tags", {}) {
+				if imgui.MenuItem("Add Tag") {
 					// TODO: Implement tag adding
 				}
-
-				// Display existing tags
-				// TODO: Implement tag display and removal
+				imgui.EndCombo()
 			}
 		}
 	}
