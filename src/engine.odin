@@ -235,7 +235,7 @@ engine_update :: proc() {
 
 	// Handle camera movement based on mode
 	if !imgui.IsAnyItemActive() {
-		if editor_is_active() {
+		if editor.initialized {
 			// Editor camera controls
 			if raylib.IsKeyDown(.W) {
 				engine.editor_camera.position += raylib.Vector3{0, 0, -0.1}
@@ -284,7 +284,9 @@ engine_update :: proc() {
 	}
 
 	// Update editor
-	editor_update()
+	if editor.initialized {
+		editor_manager_update()
+	}
 }
 
 // Render the engine
@@ -295,7 +297,7 @@ engine_render :: proc() {
 	raylib.ClearBackground(raylib.BLACK)
 
 	// Begin 3D mode
-	if editor_is_active() {
+	if editor.initialized {
 		// Use editor camera
 		raylib.BeginMode3D(engine.editor_camera)
 		{
@@ -321,7 +323,9 @@ engine_render :: proc() {
 	}
 
 	// Render editor UI
-	editor_render()
+	if editor.initialized {
+		editor_manager_render()
+	}
 
 	// End ImGui frame and render
 	imgui_end_frame()

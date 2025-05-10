@@ -3,6 +3,7 @@ package main
 import imgui "../vendor/odin-imgui"
 import "core:fmt"
 import "core:log"
+import "core:strings"
 import raylib "vendor:raylib"
 
 // Light types
@@ -62,11 +63,31 @@ ecs_get_lights :: proc() -> map[Entity]Light {
 // Render light component in inspector
 light_render_inspector :: proc(light: ^Light) {
 	if imgui.CollapsingHeader("Light") {
+		// Light type selection
+		current_type := light.light_type
+		type_str := fmt.tprintf("%v", current_type)
+		if imgui.BeginCombo("Type", strings.clone_to_cstring(type_str)) {
+			if imgui.Selectable("Directional", current_type == .DIRECTIONAL) {
+				light.light_type = .DIRECTIONAL
+			}
+			if imgui.Selectable("Point", current_type == .POINT) {
+				light.light_type = .POINT
+			}
+			if imgui.Selectable("Spot", current_type == .SPOT) {
+				light.light_type = .SPOT
+			}
+			imgui.EndCombo()
+		}
+
 		imgui.PushItemWidth(-1)
 		imgui.ColorEdit3("Color", &light.color)
 		imgui.DragFloat("Intensity", &light.intensity, 0.1)
 		imgui.DragFloat("Range", &light.range, 0.1)
-		imgui.DragFloat("Spot Angle", &light.spot_angle, 0.1)
+
+		// Only show spot angle for spot lights
+		if light.light_type == .SPOT {
+			imgui.DragFloat("Spot Angle", &light.spot_angle, 0.1)
+		}
 		imgui.PopItemWidth()
 	}
 }

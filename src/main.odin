@@ -46,11 +46,11 @@ main :: proc() {
 	defer imgui_shutdown()
 
 	// Initialize editor
-	if !editor_init() {
+	if !editor_manager_init() {
 		log_error(.ENGINE, "Failed to initialize editor")
 		return
 	}
-	defer editor_shutdown()
+	defer editor_manager_shutdown()
 
 	log_info(.ENGINE, "All systems initialized successfully")
 
