@@ -67,12 +67,12 @@ editor_scene_tree_render :: proc() {
 		return
 	}
 
-	// Add Node button at the top
-	if imgui.Button("Add Node") {
-		imgui.OpenPopup("AddNodePopup")
+	// Add Unity-style "+" button with dropdown
+	if imgui.Button("+") {
+		imgui.OpenPopup("AddEntityPopup")
 	}
 
-	if imgui.BeginPopup("AddNodePopup") {
+	if imgui.BeginPopup("AddEntityPopup") {
 		if imgui.MenuItem("Empty") {
 			cmd := command_create_node_add("Empty", editor.selected_entity)
 			command_manager_execute(&cmd)
@@ -174,6 +174,9 @@ editor_scene_tree_render :: proc() {
 		}
 		imgui.EndPopup()
 	}
+
+	imgui.SameLine()
+	imgui.Text("Scene")
 
 	imgui.Separator()
 

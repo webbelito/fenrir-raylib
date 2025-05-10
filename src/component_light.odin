@@ -62,7 +62,7 @@ ecs_get_lights :: proc() -> map[Entity]Light {
 
 // Render light component in inspector
 light_render_inspector :: proc(light: ^Light) {
-	if imgui.CollapsingHeader("Light") {
+	if render_component_header("Light", light.entity, .LIGHT) {
 		// Light type selection
 		current_type := light.light_type
 		type_str := fmt.tprintf("%v", current_type)

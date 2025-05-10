@@ -42,7 +42,7 @@ ecs_get_scripts :: proc() -> map[Entity]Script {
 
 // Render script component in inspector
 script_render_inspector :: proc(script: ^Script) {
-	if imgui.CollapsingHeader("Script") {
+	if render_component_header("Script", script.entity, .SCRIPT) {
 		imgui.PushItemWidth(-1)
 
 		// Script selection

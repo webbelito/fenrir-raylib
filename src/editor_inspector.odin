@@ -91,20 +91,25 @@ editor_inspector_render :: proc() {
 	}
 
 	if imgui.BeginPopup("AddComponent") {
-		if imgui.MenuItem("Transform") {
-			ecs_add_transform(editor.selected_entity)
-		}
 		if imgui.MenuItem("Renderer") {
-			ecs_add_renderer(editor.selected_entity)
+			if renderer := create_component(.RENDERER, editor.selected_entity); renderer != nil {
+				ecs_add_component(editor.selected_entity, renderer)
+			}
 		}
 		if imgui.MenuItem("Camera") {
-			ecs_add_camera(editor.selected_entity, 45.0, 0.1, 1000.0, false)
+			if camera := create_component(.CAMERA, editor.selected_entity); camera != nil {
+				ecs_add_component(editor.selected_entity, camera)
+			}
 		}
 		if imgui.MenuItem("Light") {
-			ecs_add_light(editor.selected_entity, .POINT)
+			if light := create_component(.LIGHT, editor.selected_entity); light != nil {
+				ecs_add_component(editor.selected_entity, light)
+			}
 		}
 		if imgui.MenuItem("Script") {
-			ecs_add_script(editor.selected_entity, "default_script")
+			if script := create_component(.SCRIPT, editor.selected_entity); script != nil {
+				ecs_add_component(editor.selected_entity, script)
+			}
 		}
 		imgui.EndPopup()
 	}

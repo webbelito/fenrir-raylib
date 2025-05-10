@@ -156,24 +156,6 @@ ecs_get_component :: proc(entity: Entity, component_type: Component_Type) -> ^Co
 	return nil
 }
 
-// Remove a component from an entity
-ecs_remove_component :: proc(entity: Entity, component_type: Component_Type) {
-	#partial switch component_type {
-	case .TRANSFORM:
-		delete_key(&entity_manager.transforms, entity)
-	case .RENDERER:
-		delete_key(&entity_manager.renderers, entity)
-	case .CAMERA:
-		delete_key(&entity_manager.cameras, entity)
-	case .LIGHT:
-		delete_key(&entity_manager.lights, entity)
-	case .SCRIPT:
-		delete_key(&entity_manager.scripts, entity)
-	case:
-	// Unknown component type
-	}
-}
-
 // Get all components for an entity
 ecs_get_components :: proc(entity: Entity, allocator := context.allocator) -> []^Component {
 	components: [dynamic]^Component

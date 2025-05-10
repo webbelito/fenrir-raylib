@@ -69,7 +69,7 @@ ecs_get_main_camera :: proc() -> Entity {
 
 // Render camera component in inspector
 camera_render_inspector :: proc(camera: ^Camera) {
-	if imgui.CollapsingHeader("Camera") {
+	if render_component_header("Camera", camera.entity, .CAMERA) {
 		// Projection type selection
 		current_type := camera.projection_type
 		type_str := fmt.tprintf("%v", current_type)

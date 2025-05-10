@@ -12,10 +12,7 @@ editor_menu_render :: proc() {
 		// File menu
 		if imgui.BeginMenu("File") {
 			if imgui.MenuItem("New Scene") {
-				if !check_unsaved_changes("new") {
-					scene_manager_new("Untitled")
-					editor.scene_path = ""
-				}
+				scene_manager_new("Untitled")
 			}
 			if imgui.MenuItem("Open Scene") {
 				if !check_unsaved_changes("open") {
@@ -75,122 +72,6 @@ editor_menu_render :: proc() {
 			imgui.EndMenu()
 		}
 
-		// Entity menu
-		if imgui.BeginMenu("Entity") {
-			if imgui.MenuItem("Add Empty", "Ctrl+Shift+N") {
-				cmd := command_create_node_add("Empty", editor.selected_entity)
-				command_manager_execute(&cmd)
-				if cmd.data != nil {
-					if data := cast(^Command_Node_Add)cmd.data; data != nil {
-						editor.selected_entity = data.entity_id
-					}
-				}
-			}
-			if imgui.BeginMenu("3D Object") {
-				if imgui.MenuItem("Cube") {
-					cmd := command_create_node_add("Cube", editor.selected_entity)
-					command_manager_execute(&cmd)
-					if cmd.data != nil {
-						if data := cast(^Command_Node_Add)cmd.data; data != nil {
-							transform := ecs_add_transform(data.entity_id)
-							renderer := ecs_add_renderer(data.entity_id)
-							if transform != nil && renderer != nil {
-								renderer.model_type = .CUBE
-								renderer.mesh_path = "cube"
-								renderer.material_path = "default"
-							}
-							editor.selected_entity = data.entity_id
-						}
-					}
-				}
-				if imgui.MenuItem("Ambulance") {
-					cmd := command_create_node_add("Ambulance", editor.selected_entity)
-					command_manager_execute(&cmd)
-					if cmd.data != nil {
-						if data := cast(^Command_Node_Add)cmd.data; data != nil {
-							transform := ecs_add_transform(data.entity_id)
-							renderer := ecs_add_renderer(data.entity_id)
-							if transform != nil && renderer != nil {
-								renderer.model_type = .AMBULANCE
-								renderer.mesh_path = "assets/meshes/ambulance.glb"
-								renderer.material_path = "assets/meshes/Textures/colormap.png"
-							}
-							editor.selected_entity = data.entity_id
-						}
-					}
-				}
-				imgui.EndMenu()
-			}
-			if imgui.BeginMenu("Light") {
-				if imgui.MenuItem("Directional Light") {
-					cmd := command_create_node_add("Directional Light", editor.selected_entity)
-					command_manager_execute(&cmd)
-					if cmd.data != nil {
-						if data := cast(^Command_Node_Add)cmd.data; data != nil {
-							transform := ecs_add_transform(data.entity_id)
-							light := ecs_add_light(data.entity_id, .DIRECTIONAL)
-							if transform != nil && light != nil {
-								editor.selected_entity = data.entity_id
-							}
-						}
-					}
-				}
-				if imgui.MenuItem("Point Light") {
-					cmd := command_create_node_add("Point Light", editor.selected_entity)
-					command_manager_execute(&cmd)
-					if cmd.data != nil {
-						if data := cast(^Command_Node_Add)cmd.data; data != nil {
-							transform := ecs_add_transform(data.entity_id)
-							light := ecs_add_light(data.entity_id, .POINT)
-							if transform != nil && light != nil {
-								editor.selected_entity = data.entity_id
-							}
-						}
-					}
-				}
-				if imgui.MenuItem("Spot Light") {
-					cmd := command_create_node_add("Spot Light", editor.selected_entity)
-					command_manager_execute(&cmd)
-					if cmd.data != nil {
-						if data := cast(^Command_Node_Add)cmd.data; data != nil {
-							transform := ecs_add_transform(data.entity_id)
-							light := ecs_add_light(data.entity_id, .SPOT)
-							if transform != nil && light != nil {
-								editor.selected_entity = data.entity_id
-							}
-						}
-					}
-				}
-				imgui.EndMenu()
-			}
-			if imgui.MenuItem("Camera") {
-				cmd := command_create_node_add("Camera", editor.selected_entity)
-				command_manager_execute(&cmd)
-				if cmd.data != nil {
-					if data := cast(^Command_Node_Add)cmd.data; data != nil {
-						transform := ecs_add_transform(data.entity_id)
-						camera := ecs_add_camera(data.entity_id, 45.0, 0.1, 1000.0, true)
-						if transform != nil && camera != nil {
-							editor.selected_entity = data.entity_id
-						}
-					}
-				}
-			}
-			imgui.Separator()
-			if imgui.MenuItem("Duplicate Selected", "Ctrl+D", false, editor.selected_entity != 0) {
-				if editor.selected_entity != 0 {
-					cmd := command_create_node_duplicate(editor.selected_entity)
-					command_manager_execute(&cmd)
-					if cmd.data != nil {
-						if data := cast(^Command_Node_Duplicate)cmd.data; data != nil {
-							editor.selected_entity = data.new_id
-						}
-					}
-				}
-			}
-			imgui.EndMenu()
-		}
-
 		// Window menu
 		if imgui.BeginMenu("Window") {
 			if imgui.MenuItem("Scene Tree", nil, editor.scene_tree_open) {
@@ -201,6 +82,7 @@ editor_menu_render :: proc() {
 			}
 			imgui.EndMenu()
 		}
+
 		imgui.EndMainMenuBar()
 	}
 }

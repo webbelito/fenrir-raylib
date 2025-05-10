@@ -55,7 +55,7 @@ ecs_get_renderers :: proc() -> map[Entity]Renderer {
 
 // Render renderer component in inspector
 renderer_render_inspector :: proc(renderer: ^Renderer) {
-	if imgui.CollapsingHeader("Renderer") {
+	if render_component_header("Renderer", renderer.entity, .RENDERER) {
 		imgui.PushItemWidth(-1)
 		imgui.Checkbox("Visible", &renderer.visible)
 
