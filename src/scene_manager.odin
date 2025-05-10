@@ -249,24 +249,36 @@ scene_manager_new :: proc(name: string) -> bool {
 	}
 
 	// Add transform component to camera
-	transform := ecs_add_transform(camera_entity)
-	if transform == nil {
+	if !ecs_create_and_add_component(camera_entity, .TRANSFORM) {
 		log_error(.ENGINE, "Failed to add transform to camera")
 		ecs_destroy_entity(camera_entity)
 		scene_manager_cleanup()
 		return false
 	}
-	transform.position = {0, 5, -10}
-	transform.rotation = {0, 0, 0}
-	transform.scale = {1, 1, 1}
+
+	// Set transform values
+	if transform := ecs_get_component(camera_entity, .TRANSFORM); transform != nil {
+		transform := cast(^Transform_Component)transform
+		transform.position = {0, 5, -10}
+		transform.rotation = {0, 0, 0}
+		transform.scale = {1, 1, 1}
+	}
 
 	// Add camera component
-	camera := ecs_add_camera(camera_entity, 45.0, 0.1, 1000.0, true)
-	if camera == nil {
+	if !ecs_create_and_add_component(camera_entity, .CAMERA) {
 		log_error(.ENGINE, "Failed to add camera component")
 		ecs_destroy_entity(camera_entity)
 		scene_manager_cleanup()
 		return false
+	}
+
+	// Set camera values
+	if camera := ecs_get_component(camera_entity, .CAMERA); camera != nil {
+		camera := cast(^Camera)camera
+		camera.fov = 45.0
+		camera.near = 0.1
+		camera.far = 1000.0
+		camera.is_main = true
 	}
 
 	// Create a node for the camera
@@ -342,11 +354,18 @@ scene_manager_create_node :: proc(name: string, parent_id: Entity = 0) -> Entity
 	}
 
 	// Always add transform component to new nodes
-	transform := ecs_add_transform(entity)
-	if transform == nil {
+	if !ecs_create_and_add_component(entity, .TRANSFORM) {
 		log_error(.ENGINE, "Failed to add transform component to entity %d", entity)
 		ecs_destroy_entity(entity)
 		return 0
+	}
+
+	// Set default transform values
+	if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
+		transform := cast(^Transform_Component)transform
+		transform.position = {0, 0, 0}
+		transform.rotation = {0, 0, 0}
+		transform.scale = {1, 1, 1}
 	}
 
 	log_info(.ENGINE, "Created node: %s (ID: %d)", name, entity)
@@ -484,24 +503,36 @@ scene_manager_load :: proc(path: string) -> bool {
 		}
 
 		// Add transform component to camera
-		transform := ecs_add_transform(camera_entity)
-		if transform == nil {
+		if !ecs_create_and_add_component(camera_entity, .TRANSFORM) {
 			log_error(.ENGINE, "Failed to add transform to default camera")
 			ecs_destroy_entity(camera_entity)
 			scene_manager_cleanup()
 			return false
 		}
-		transform.position = {0, 5, -10}
-		transform.rotation = {0, 0, 0}
-		transform.scale = {1, 1, 1}
+
+		// Set transform values
+		if transform := ecs_get_component(camera_entity, .TRANSFORM); transform != nil {
+			transform := cast(^Transform_Component)transform
+			transform.position = {0, 5, -10}
+			transform.rotation = {0, 0, 0}
+			transform.scale = {1, 1, 1}
+		}
 
 		// Add camera component
-		camera := ecs_add_camera(camera_entity, 45.0, 0.1, 1000.0, true)
-		if camera == nil {
-			log_error(.ENGINE, "Failed to add camera component to default camera")
+		if !ecs_create_and_add_component(camera_entity, .CAMERA) {
+			log_error(.ENGINE, "Failed to add camera component")
 			ecs_destroy_entity(camera_entity)
 			scene_manager_cleanup()
 			return false
+		}
+
+		// Set camera values
+		if camera := ecs_get_component(camera_entity, .CAMERA); camera != nil {
+			camera := cast(^Camera)camera
+			camera.fov = 45.0
+			camera.near = 0.1
+			camera.far = 1000.0
+			camera.is_main = true
 		}
 
 		// Create a node for the camera
@@ -534,16 +565,30 @@ scene_manager_load :: proc(path: string) -> bool {
 		entity_map[entity_data.name] = entity
 
 		// Add transform component
-		transform := ecs_add_transform(
-			entity,
-			entity_data.transform.position,
-			entity_data.transform.rotation,
-			entity_data.transform.scale,
-		)
-		if transform == nil {
+		if !ecs_create_and_add_component(entity, .TRANSFORM) {
 			log_error(.ENGINE, "Failed to add transform component to entity %d", entity)
 			ecs_destroy_entity(entity)
 			continue
+		}
+
+		// Set transform values
+		if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
+			transform := cast(^Transform_Component)transform
+			transform.position = {
+				entity_data.transform.position[0],
+				entity_data.transform.position[1],
+				entity_data.transform.position[2],
+			}
+			transform.rotation = {
+				entity_data.transform.rotation[0],
+				entity_data.transform.rotation[1],
+				entity_data.transform.rotation[2],
+			}
+			transform.scale = {
+				entity_data.transform.scale[0],
+				entity_data.transform.scale[1],
+				entity_data.transform.scale[2],
+			}
 		}
 
 		// Add renderer component if present
@@ -554,26 +599,33 @@ scene_manager_load :: proc(path: string) -> bool {
 				model_type = .AMBULANCE
 			}
 
-			renderer_comp := ecs_add_renderer(entity, renderer.mesh_path, renderer.material_path)
-			if renderer_comp != nil {
+			if !ecs_create_and_add_component(entity, .RENDERER) {
+				log_error(.ENGINE, "Failed to add renderer component to entity %d", entity)
+				continue
+			}
+
+			if renderer_comp := ecs_get_component(entity, .RENDERER); renderer_comp != nil {
+				renderer_comp := cast(^Renderer)renderer_comp
+				renderer_comp.mesh = renderer.mesh_path
+				renderer_comp.material = renderer.material_path
 				renderer_comp.model_type = model_type
 				renderer_comp.visible = true
-			} else {
-				log_error(.ENGINE, "Failed to add renderer component to entity %d", entity)
 			}
 		}
 
 		// Add camera component if present
 		if camera, ok := entity_data.camera.(Camera_Data); ok {
-			camera_comp := ecs_add_camera(
-				entity,
-				camera.fov,
-				camera.near,
-				camera.far,
-				camera.is_main,
-			)
-			if camera_comp == nil {
+			if !ecs_create_and_add_component(entity, .CAMERA) {
 				log_error(.ENGINE, "Failed to add camera component to entity %d", entity)
+				continue
+			}
+
+			if camera_comp := ecs_get_component(entity, .CAMERA); camera_comp != nil {
+				camera_comp := cast(^Camera)camera_comp
+				camera_comp.fov = camera.fov
+				camera_comp.near = camera.near
+				camera_comp.far = camera.far
+				camera_comp.is_main = camera.is_main
 			}
 		}
 
@@ -592,24 +644,31 @@ scene_manager_load :: proc(path: string) -> bool {
 				light_type = .POINT
 			}
 
-			light_comp := ecs_add_light(
-				entity,
-				light_type,
-				light.color,
-				light.intensity,
-				light.range,
-				light.spot_angle,
-			)
-			if light_comp == nil {
+			if !ecs_create_and_add_component(entity, .LIGHT) {
 				log_error(.ENGINE, "Failed to add light component to entity %d", entity)
+				continue
+			}
+
+			if light_comp := ecs_get_component(entity, .LIGHT); light_comp != nil {
+				light_comp := cast(^Light)light_comp
+				light_comp.light_type = light_type
+				light_comp.color = {light.color[0], light.color[1], light.color[2]}
+				light_comp.intensity = light.intensity
+				light_comp.range = light.range
+				light_comp.spot_angle = light.spot_angle
 			}
 		}
 
 		// Add script component if present
 		if script, ok := entity_data.script.(Script_Data); ok {
-			script_comp := ecs_add_script(entity, script.script_name)
-			if script_comp == nil {
+			if !ecs_create_and_add_component(entity, .SCRIPT) {
 				log_error(.ENGINE, "Failed to add script component to entity %d", entity)
+				continue
+			}
+
+			if script_comp := ecs_get_component(entity, .SCRIPT); script_comp != nil {
+				script_comp := cast(^Script)script_comp
+				script_comp.script_name = script.script_name
 			}
 		}
 
@@ -1061,15 +1120,19 @@ scene_manager_render :: proc() {
 
 	// Render all entities
 	for entity in scene_manager.current_scene.entities {
-		// Skip root node (Entity 0) and camera entities
-		if entity == 0 || ecs_get_camera(entity) != nil {
+		// Skip root node (Entity 0)
+		if entity == 0 {
 			continue
 		}
 
-		// Get transform component
+		// Skip entities without transform components
 		transform := ecs_get_transform(entity)
 		if transform == nil {
-			log_warning(.ENGINE, "Entity %d has no transform component", entity)
+			continue
+		}
+
+		// Skip camera entities
+		if ecs_get_camera(entity) != nil {
 			continue
 		}
 
@@ -1178,36 +1241,67 @@ scene_manager_duplicate_node :: proc(node_id: Entity) -> Entity {
 
 		// Copy all components from the original entity
 		if transform := ecs_get_transform(node_id); transform != nil {
-			new_transform := ecs_add_transform(new_entity)
-			if new_transform != nil {
+			if !ecs_create_and_add_component(new_entity, .TRANSFORM) {
+				log_error(.ENGINE, "Failed to add transform component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_transform := ecs_get_component(new_entity, .TRANSFORM); new_transform != nil {
+				new_transform := cast(^Transform_Component)new_transform
 				new_transform^ = transform^
 			}
 		}
 
 		if renderer := ecs_get_renderer(node_id); renderer != nil {
-			new_renderer := ecs_add_renderer(new_entity)
-			if new_renderer != nil {
+			if !ecs_create_and_add_component(new_entity, .RENDERER) {
+				log_error(.ENGINE, "Failed to add renderer component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_renderer := ecs_get_component(new_entity, .RENDERER); new_renderer != nil {
+				new_renderer := cast(^Renderer)new_renderer
 				new_renderer^ = renderer^
 			}
 		}
 
 		if camera := ecs_get_camera(node_id); camera != nil {
-			new_camera := ecs_add_camera(new_entity, camera.fov, camera.near, camera.far, false)
-			if new_camera != nil {
+			if !ecs_create_and_add_component(new_entity, .CAMERA) {
+				log_error(.ENGINE, "Failed to add camera component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_camera := ecs_get_component(new_entity, .CAMERA); new_camera != nil {
+				new_camera := cast(^Camera)new_camera
 				new_camera^ = camera^
+				new_camera.is_main = false // Ensure only one main camera
 			}
 		}
 
 		if light := ecs_get_light(node_id); light != nil {
-			new_light := ecs_add_light(new_entity, light.light_type)
-			if new_light != nil {
+			if !ecs_create_and_add_component(new_entity, .LIGHT) {
+				log_error(.ENGINE, "Failed to add light component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_light := ecs_get_component(new_entity, .LIGHT); new_light != nil {
+				new_light := cast(^Light)new_light
 				new_light^ = light^
 			}
 		}
 
 		if script := ecs_get_script(node_id); script != nil {
-			new_script := ecs_add_script(new_entity, script.script_name)
-			if new_script != nil {
+			if !ecs_create_and_add_component(new_entity, .SCRIPT) {
+				log_error(.ENGINE, "Failed to add script component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_script := ecs_get_component(new_entity, .SCRIPT); new_script != nil {
+				new_script := cast(^Script)new_script
 				new_script^ = script^
 			}
 		}

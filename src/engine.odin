@@ -154,11 +154,11 @@ engine_init :: proc(config: Engine_Config) -> bool {
 
 	log_info(.ENGINE, "Initializing engine")
 
+	// Initialize entity manager
+	entity_manager_init()
+
 	// Initialize command manager
 	command_manager_init()
-
-	// Initialize ECS
-	ecs_init()
 
 	// Initialize component system
 	component_system_init()
@@ -203,11 +203,11 @@ engine_shutdown :: proc() {
 
 	log_info(.ENGINE, "Shutting down engine")
 
+	// Shutdown entity manager
+	entity_manager_shutdown()
+
 	// Shutdown command manager
 	command_manager_shutdown()
-
-	// Shutdown ECS
-	ecs_shutdown()
 
 	// Shutdown component system
 	component_system_shutdown()

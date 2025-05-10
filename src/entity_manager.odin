@@ -3,8 +3,9 @@ package main
 import "core:fmt"
 import "core:log"
 import "core:slice"
+import "core:strings"
 
-// Entity manager
+// Entity manager state
 Entity_Manager :: struct {
 	next_entity_id: Entity,
 	transforms:     map[Entity]Transform_Component,
@@ -12,12 +13,15 @@ Entity_Manager :: struct {
 	cameras:        map[Entity]Camera,
 	lights:         map[Entity]Light,
 	scripts:        map[Entity]Script,
+	names:          map[Entity]string,
+	active_states:  map[Entity]bool,
+	tags:           map[Entity][dynamic]string,
 }
 
 entity_manager: Entity_Manager
 
 // Initialize the entity manager
-ecs_init :: proc() {
+entity_manager_init :: proc() {
 	log_info(.ENGINE, "Initializing ECS system")
 
 	entity_manager.next_entity_id = 1
@@ -26,10 +30,13 @@ ecs_init :: proc() {
 	entity_manager.cameras = make(map[Entity]Camera)
 	entity_manager.lights = make(map[Entity]Light)
 	entity_manager.scripts = make(map[Entity]Script)
+	entity_manager.names = make(map[Entity]string)
+	entity_manager.active_states = make(map[Entity]bool)
+	entity_manager.tags = make(map[Entity][dynamic]string)
 }
 
 // Shutdown the entity manager
-ecs_shutdown :: proc() {
+entity_manager_shutdown :: proc() {
 	log_info(.ENGINE, "Shutting down ECS system")
 
 	delete(entity_manager.transforms)
@@ -37,12 +44,44 @@ ecs_shutdown :: proc() {
 	delete(entity_manager.cameras)
 	delete(entity_manager.lights)
 	delete(entity_manager.scripts)
+	delete(entity_manager.names)
+	delete(entity_manager.active_states)
+	for _, &tags in entity_manager.tags {
+		clear(&tags)
+	}
+	delete(entity_manager.tags)
+	log_info(.ENGINE, "Entity manager shut down")
 }
 
 // Create a new entity
-ecs_create_entity :: proc() -> Entity {
+ecs_create_entity :: proc(name: string = "") -> Entity {
 	entity := entity_manager.next_entity_id
 	entity_manager.next_entity_id += 1
+
+	// Add transform component by default
+	transform := Transform_Component {
+		type     = .TRANSFORM,
+		entity   = entity,
+		enabled  = true,
+		position = {0, 0, 0},
+		rotation = {0, 0, 0},
+		scale    = {1, 1, 1},
+	}
+	entity_manager.transforms[entity] = transform
+
+	// Set entity name if provided
+	if name != "" {
+		entity_manager.names[entity] = name
+	} else {
+		entity_manager.names[entity] = fmt.tprintf("Entity_%d", entity)
+	}
+
+	// Set default active state
+	entity_manager.active_states[entity] = true
+
+	// Initialize empty tags array
+	entity_manager.tags[entity] = make([dynamic]string)
+
 	return entity
 }
 
@@ -53,6 +92,9 @@ ecs_destroy_entity :: proc(entity: Entity) {
 	delete_key(&entity_manager.cameras, entity)
 	delete_key(&entity_manager.lights, entity)
 	delete_key(&entity_manager.scripts, entity)
+	delete_key(&entity_manager.names, entity)
+	delete_key(&entity_manager.active_states, entity)
+	delete_key(&entity_manager.tags, entity)
 }
 
 // Check if an entity has a specific component
@@ -186,4 +228,57 @@ ecs_get_components :: proc(entity: Entity, allocator := context.allocator) -> []
 	}
 
 	return slice.clone(components[:])
+}
+
+// Get entity name
+ecs_get_entity_name :: proc(entity: Entity) -> string {
+	if name, ok := entity_manager.names[entity]; ok {
+		return name
+	}
+	return fmt.tprintf("Entity_%d", entity)
+}
+
+// Set entity name
+ecs_set_entity_name :: proc(entity: Entity, name: string) {
+	entity_manager.names[entity] = name
+}
+
+// Get entity active state
+ecs_is_entity_active :: proc(entity: Entity) -> bool {
+	if active, ok := entity_manager.active_states[entity]; ok {
+		return active
+	}
+	return true
+}
+
+// Set entity active state
+ecs_set_entity_active :: proc(entity: Entity, active: bool) {
+	entity_manager.active_states[entity] = active
+}
+
+// Get entity tags
+ecs_get_entity_tags :: proc(entity: Entity) -> []string {
+	if tags, ok := entity_manager.tags[entity]; ok {
+		return tags[:]
+	}
+	return nil
+}
+
+// Add tag to entity
+ecs_add_entity_tag :: proc(entity: Entity, tag: string) {
+	if tags, ok := entity_manager.tags[entity]; ok {
+		append(&tags, tag)
+	}
+}
+
+// Remove tag from entity
+ecs_remove_entity_tag :: proc(entity: Entity, tag: string) {
+	if tags, ok := entity_manager.tags[entity]; ok {
+		for i := 0; i < len(tags); i += 1 {
+			if tags[i] == tag {
+				ordered_remove(&tags, i)
+				break
+			}
+		}
+	}
 }
