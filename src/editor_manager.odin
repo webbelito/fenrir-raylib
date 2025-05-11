@@ -16,6 +16,7 @@ Editor_State :: struct {
 	scene_tree_open:     bool,
 	inspector_open:      bool,
 	viewport_open:       bool,
+	console_open:        bool,
 	scene_tree_width:    f32,
 	inspector_width:     f32,
 	menu_height:         f32,
@@ -35,36 +36,36 @@ Editor_State :: struct {
 
 editor: Editor_State
 
+// Initialize the editor state (called once)
+editor_init_state :: proc() {
+	editor.initialized = false
+	editor.viewport_open = true // Default viewport to open
+	editor.console_open = true // Default console to open
+	editor.scene_tree_open = true
+	editor.inspector_open = true
+	editor.scene_tree_width = 200.0
+	editor.inspector_width = 200.0
+	editor.menu_height = 30.0
+	editor.selected_entity = 0
+}
+
 // Initialize the editor
 editor_init :: proc() -> bool {
 	if editor.initialized {
 		return true
 	}
+	log_info(.EDITOR, "Initializing editor")
 
-	// Initialize editor state
-	editor = Editor_State {
-		initialized      = true,
-		scene_tree_open  = true,
-		inspector_open   = true,
-		viewport_open    = true,
-		scene_tree_width = 200.0,
-		inspector_width  = 200.0,
-		menu_height      = 30.0,
-		selected_entity  = 0,
-	}
+	// Initialize editor state variables first
+	editor_init_state()
 
-	// Initialize editor components
-	if !editor_scene_tree_init() {
-		return false
-	}
-	if !editor_inspector_init() {
-		return false
-	}
-	if !editor_viewport_init() {
-		return false
-	}
+	if !editor_scene_tree_init() do return false
+	if !editor_inspector_init() do return false
+	if !editor_viewport_init() do return false
+	if !editor_console_init() do return false // Initialize console
 
-	log_info(.ENGINE, "Editor initialized")
+	editor.initialized = true
+	log_info(.EDITOR, "Editor initialized")
 	return true
 }
 
@@ -73,13 +74,15 @@ editor_shutdown :: proc() {
 	if !editor.initialized {
 		return
 	}
+	log_info(.EDITOR, "Shutting down editor")
 
 	editor_scene_tree_shutdown()
 	editor_inspector_shutdown()
 	editor_viewport_shutdown()
+	editor_console_shutdown() // Shutdown console
 
 	editor.initialized = false
-	log_info(.ENGINE, "Editor shut down")
+	log_info(.EDITOR, "Editor shut down")
 }
 
 // Update the editor
@@ -90,35 +93,29 @@ editor_update :: proc() {
 
 	editor_scene_tree_update()
 	editor_inspector_update()
-	// editor_viewport_update() // This was removed as viewport texture rendering is handled by engine_render
+	// editor_viewport_update() // Viewport has no separate update currently
+	// editor_console_update() // Console has no separate update currently
 }
 
-// Render the editor
+// Render the editor UI elements
 editor_render :: proc() {
 	if !editor.initialized {
 		return
 	}
 
-	// Render the main menu bar first
-	// This will be part of the "DockSpace Host" window defined in engine_render,
-	// or if using DockSpaceOverViewport, it would be separate.
-	// Given engine.odin's current structure, this should be fine.
 	editor_menu_render()
+	editor_layout_render() // Renders Scene Tree and Inspector
 
-	// The DockSpace is now handled by engine.odin's engine_render function.
-	// This function (editor_render) now just calls the rendering for individual editor parts,
-	// which will become dockable windows.
-
-	// Render the editor layout (panels: scene tree, inspector)
-	editor_layout_render()
-
-	// Render the viewport ImGui window (acts as an overlay for the 3D scene)
-	// This will also update viewport_state.rect_* variables for the 3D scene drawing.
+	// Viewport UI (its 3D scene is drawn by engine_render)
 	if editor.viewport_open {
 		editor_viewport_render_ui()
 	}
 
-	// Render any active dialogs (should be last to appear on top)
+	// Console UI
+	// editor_console_render_ui() // Called directly, visibility handled by its Begin call with &editor.console_open
+	// Let Begin handle visibility: 
+	editor_console_render_ui()
+
 	editor_manager_render_dialogs()
 }
 

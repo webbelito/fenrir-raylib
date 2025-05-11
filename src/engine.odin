@@ -314,43 +314,58 @@ engine_render :: proc() {
 		imgui.SetNextWindowBgAlpha(0.0) // Keep this as well for good measure
 		imgui.Begin("DockSpace Host", nil, dockspace_host_window_flags)
 		{
-			// We pushed 2 style vars (rounding, border), so pop 2.
-			// The WindowBg color is popped after End()
 			imgui.PopStyleVar(2)
-
-			// Submit the DockSpace using positional arguments
 			dockspace_id_val := imgui.GetID("MainDockspace")
 
-			// Setup initial dock layout if needed
 			if engine.needs_initial_dock_layout {
-				main_viewport_size := main_viewport_imgui.WorkSize
-
-				imgui.DockBuilderRemoveNode(dockspace_id_val)
+				imgui.DockBuilderRemoveNode(dockspace_id_val) // Clear out existing layout
 				imgui.DockBuilderAddNode(dockspace_id_val, {})
-				imgui.DockBuilderSetNodeSize(dockspace_id_val, main_viewport_size)
+				imgui.DockBuilderSetNodeSize(dockspace_id_val, main_viewport_imgui.WorkSize)
 
+				// Define dock IDs
+				dock_id_root := dockspace_id_val
+				dock_id_inspector: imgui.ID
+				dock_id_left_of_inspector: imgui.ID // Area to the left of the full-height inspector
+				dock_id_console: imgui.ID
+				dock_id_above_console: imgui.ID // Area above console (for scene tree & viewport)
 				dock_id_scene_tree: imgui.ID
-				dock_id_center_right: imgui.ID
-				_ = imgui.DockBuilderSplitNode(
-					dockspace_id_val,
-					imgui.Dir.Left,
+				dock_id_viewport: imgui.ID
+
+				// 1. Split root node for Inspector (right, full height)
+				// Inspector takes ~20% of the width from the right.
+				imgui.DockBuilderSplitNode(
+					dock_id_root,
+					imgui.Dir.Right,
 					0.20,
-					&dock_id_scene_tree,
-					&dock_id_center_right,
+					&dock_id_inspector,
+					&dock_id_left_of_inspector,
 				)
 
-				dock_id_inspector: imgui.ID
-				dock_id_viewport: imgui.ID
-				_ = imgui.DockBuilderSplitNode(
-					dock_id_center_right,
-					imgui.Dir.Right,
+				// 2. Split the area left_of_inspector for Console (bottom)
+				// Console takes ~25% of the height from the bottom of this remaining area.
+				imgui.DockBuilderSplitNode(
+					dock_id_left_of_inspector,
+					imgui.Dir.Down,
 					0.25,
-					&dock_id_inspector,
+					&dock_id_console,
+					&dock_id_above_console,
+				)
+
+				// 3. Split the area above_console for Scene Tree (left) and Viewport (center/right)
+				// Scene Tree takes ~25% of the width from the left of the 'above_console' area.
+				// (0.25 of 0.8 total width = 0.2 overall width for scene tree)
+				imgui.DockBuilderSplitNode(
+					dock_id_above_console,
+					imgui.Dir.Left,
+					0.25,
+					&dock_id_scene_tree,
 					&dock_id_viewport,
 				)
 
-				imgui.DockBuilderDockWindow("Scene Tree", dock_id_scene_tree)
+				// Dock windows to their respective nodes
 				imgui.DockBuilderDockWindow("Inspector", dock_id_inspector)
+				imgui.DockBuilderDockWindow("Console", dock_id_console)
+				imgui.DockBuilderDockWindow("Scene Tree", dock_id_scene_tree)
 				imgui.DockBuilderDockWindow("Viewport", dock_id_viewport)
 
 				imgui.DockBuilderFinish(dockspace_id_val)

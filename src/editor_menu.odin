@@ -83,6 +83,9 @@ editor_menu_render :: proc() {
 			if imgui.MenuItem("Viewport", nil, editor.viewport_open) {
 				editor.viewport_open = !editor.viewport_open
 			}
+			if imgui.MenuItem("Console", nil, editor.console_open) {
+				editor.console_open = !editor.console_open
+			}
 			imgui.Separator()
 			if imgui.MenuItem("Reset Window Layout") {
 				engine.needs_initial_dock_layout = true
