@@ -10,10 +10,10 @@ import rlgl "vendor:raylib/rlgl"
 Viewport_State :: struct {
 	initialized: bool,
 	open:        bool,
-	rect_x:      i32, // Screen-space X of the viewport content area
-	rect_y:      i32, // Screen-space Y of the viewport content area
-	rect_width:  i32, // Width of the viewport content area
-	rect_height: i32, // Height of the viewport content area
+	rect_x:      i32,
+	rect_y:      i32,
+	rect_width:  i32,
+	rect_height: i32,
 }
 
 viewport_state: Viewport_State
@@ -26,7 +26,6 @@ editor_viewport_init :: proc() -> bool {
 	viewport_state = Viewport_State {
 		initialized = true,
 		open        = true,
-		// Initialize rect to 0, it will be updated each frame
 		rect_x      = 0,
 		rect_y      = 0,
 		rect_width  = 0,
@@ -47,8 +46,8 @@ editor_viewport_shutdown :: proc() {
 
 // Render the 3D scene directly into a specified region of the main window
 editor_viewport_draw_3d_scene :: proc(x, y, width, height: i32) {
+	// Reset viewport rect if invalid to prevent drawing with old values if window is hidden/minimized
 	if width <= 0 || height <= 0 {
-		// Reset viewport rect if invalid to prevent drawing with old values if window is hidden/minimized
 		viewport_state.rect_width = 0
 		viewport_state.rect_height = 0
 		return
@@ -77,23 +76,14 @@ editor_viewport_draw_3d_scene :: proc(x, y, width, height: i32) {
 
 // Render the viewport ImGui UI (which now acts as a frame/overlay)
 editor_viewport_render_ui :: proc() {
-	// Window flags for a dockable viewport window
-	// .NoBackground makes the ImGui window transparent for the 3D scene drawn underneath.
-	// .NoScrollbar and .NoScrollWithMouse are for convenience as camera controls the view.
-	window_flags := imgui.WindowFlags {
-		.NoBackground,
-		.NoScrollbar,
-		.NoScrollWithMouse,
-		// Consider adding .MenuBar if you want a menu bar specifically for the viewport
-	}
+	window_flags := imgui.WindowFlags{.NoBackground, .NoScrollbar, .NoScrollWithMouse}
 
 	if imgui.Begin("Viewport", &viewport_state.open, window_flags) {
-		// Get the content region's top-left screen position and size
-		// This is the area where the 3D scene should be rendered.
 		window_pos := imgui.GetWindowPos()
-		content_min_relative := imgui.GetWindowContentRegionMin() // Relative to window_pos
-		content_max_relative := imgui.GetWindowContentRegionMax() // Relative to window_pos
+		content_min_relative := imgui.GetWindowContentRegionMin()
+		content_max_relative := imgui.GetWindowContentRegionMax()
 
+		// Calculate the current viewport rect in screen space
 		current_rect_x := i32(window_pos.x + content_min_relative.x)
 		current_rect_y := i32(window_pos.y + content_min_relative.y)
 		current_rect_width := i32(content_max_relative.x - content_min_relative.x)
