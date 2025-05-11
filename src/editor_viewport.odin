@@ -74,8 +74,12 @@ editor_viewport_draw_3d_scene :: proc(x, y, width, height: i32) {
 
 // Render the viewport ImGui UI (which now acts as a frame/overlay)
 editor_viewport_render_ui :: proc() {
-	window_flags := imgui.WindowFlags{.NoBackground, .NoScrollbar, .NoScrollWithMouse}
+	// Simplify flags: only .NoBackground. Add others back if this works.
+	window_flags := imgui.WindowFlags{.NoBackground}
 
+	// Convert Vec4 to u32 for PushStyleColor
+	transparent_color_u32 := imgui.GetColorU32ImVec4(imgui.Vec4{0.0, 0.0, 0.0, 0.0})
+	imgui.PushStyleColor(imgui.Col.WindowBg, transparent_color_u32) // Force transparent background
 	if imgui.Begin("Viewport", &editor.viewport_open, window_flags) {
 		window_pos := imgui.GetWindowPos()
 		content_min_relative := imgui.GetWindowContentRegionMin()
@@ -100,7 +104,7 @@ editor_viewport_render_ui :: proc() {
 		}
 
 		// Example: Display viewport size or other info as an overlay
-		imgui.SetCursorPos(imgui.Vec2{10, 10})
+		imgui.SetCursorPos(imgui.Vec2{10, 25})
 		imgui.Text(
 			"3D Viewport (Size: %dx%d)",
 			viewport_state.rect_width,
@@ -109,4 +113,5 @@ editor_viewport_render_ui :: proc() {
 
 	}
 	imgui.End()
+	imgui.PopStyleColor(1)
 }

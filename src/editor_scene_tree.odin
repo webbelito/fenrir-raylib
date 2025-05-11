@@ -176,7 +176,7 @@ editor_scene_tree_render :: proc() {
 	}
 
 	imgui.SameLine()
-	imgui.Text("Scene")
+	imgui.Text("Node")
 
 	imgui.Separator()
 

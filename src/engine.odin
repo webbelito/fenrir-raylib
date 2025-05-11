@@ -306,11 +306,16 @@ engine_render :: proc() {
 		imgui.PushStyleVar(.WindowRounding, 0.0)
 		imgui.PushStyleVar(.WindowBorderSize, 0.0)
 		// Skipping PushStyleVar for .WindowPadding to avoid linter issue.
-		// This means the DockSpace Host window will have default padding.
 
+		// Force DockSpace Host window background to be transparent
+		host_transparent_color_u32 := imgui.GetColorU32ImVec4(imgui.Vec4{0.0, 0.0, 0.0, 0.0})
+		imgui.PushStyleColor(imgui.Col.WindowBg, host_transparent_color_u32)
+
+		imgui.SetNextWindowBgAlpha(0.0) // Keep this as well for good measure
 		imgui.Begin("DockSpace Host", nil, dockspace_host_window_flags)
 		{
-			// We pushed 2 style vars, so pop 2.
+			// We pushed 2 style vars (rounding, border), so pop 2.
+			// The WindowBg color is popped after End()
 			imgui.PopStyleVar(2)
 
 			// Submit the DockSpace using positional arguments
@@ -318,7 +323,7 @@ engine_render :: proc() {
 
 			// Setup initial dock layout if needed
 			if engine.needs_initial_dock_layout {
-				main_viewport_size := main_viewport_imgui.WorkSize // Use WorkSize for usable area
+				main_viewport_size := main_viewport_imgui.WorkSize
 
 				imgui.DockBuilderRemoveNode(dockspace_id_val)
 				imgui.DockBuilderAddNode(dockspace_id_val, {})
@@ -326,9 +331,6 @@ engine_render :: proc() {
 
 				dock_id_scene_tree: imgui.ID
 				dock_id_center_right: imgui.ID
-				// Split root dockspace: left part for scene tree, remaining is center_right
-				// The returned ID from DockBuilderSplitNode is the ID of the *parent* node that was split.
-				// The new child nodes are in the out parameters.
 				_ = imgui.DockBuilderSplitNode(
 					dockspace_id_val,
 					imgui.Dir.Left,
@@ -339,7 +341,6 @@ engine_render :: proc() {
 
 				dock_id_inspector: imgui.ID
 				dock_id_viewport: imgui.ID
-				// Split center_right: right part for inspector, remaining is viewport (final center)
 				_ = imgui.DockBuilderSplitNode(
 					dock_id_center_right,
 					imgui.Dir.Right,
@@ -362,12 +363,15 @@ engine_render :: proc() {
 
 			// Call the main editor rendering function
 			if editor.initialized {
-				editor_render()
+				editor_render() // This renders the individual panels, including the "Viewport" UI
 			}
 		}
 		imgui.End() // End DockSpace Host window
+		imgui.PopStyleColor(1) // Pop the WindowBg color for DockSpace Host
 
 		// Draw the 3D scene
+		// This happens AFTER the ImGui windows are defined, but BEFORE ImGui actually renders its draw data.
+		// So, if the ImGui windows above are transparent, this 3D scene should show through.
 		if editor.viewport_open &&
 		   viewport_state.rect_width > 0 &&
 		   viewport_state.rect_height > 0 {
@@ -379,7 +383,7 @@ engine_render :: proc() {
 			)
 		}
 
-		// ImGui rendering is finalized here
+		// ImGui rendering is finalized here (draws all ImGui elements to the screen)
 		imgui_end_frame()
 	}
 	raylib.EndDrawing()
