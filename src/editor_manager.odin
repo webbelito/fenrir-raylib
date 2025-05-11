@@ -15,6 +15,10 @@ Editor_State :: struct {
 	selected_entity:     Entity,
 	scene_tree_open:     bool,
 	inspector_open:      bool,
+	viewport_open:       bool,
+	scene_tree_width:    f32,
+	inspector_width:     f32,
+	menu_height:         f32,
 	scene_path:          string,
 	show_save_dialog:    bool,
 	save_dialog_name:    [256]u8, // Buffer for scene name input
@@ -31,96 +35,82 @@ Editor_State :: struct {
 
 editor: Editor_State
 
-// Initialize the editor manager
-editor_manager_init :: proc() -> bool {
+// Initialize the editor
+editor_init :: proc() -> bool {
 	if editor.initialized {
 		return true
 	}
 
-	// Initialize all buffers with zeros
-	for i in 0 ..< len(editor.save_dialog_name) {
-		editor.save_dialog_name[i] = 0
-	}
-
+	// Initialize editor state
 	editor = Editor_State {
-		initialized         = true,
-		scene_tree_open     = true,
-		inspector_open      = true,
-		scene_path          = "",
-		show_save_dialog    = false,
-		show_open_dialog    = false,
-		available_scenes    = make([dynamic]string),
-		current_dir         = "assets/scenes",
-		file_list           = make([dynamic]string),
-		selected_file       = "",
-		show_unsaved_dialog = false,
-		pending_action      = "",
+		initialized      = true,
+		scene_tree_open  = true,
+		inspector_open   = true,
+		viewport_open    = true,
+		scene_tree_width = 200.0,
+		inspector_width  = 200.0,
+		menu_height      = 30.0,
+		selected_entity  = 0,
 	}
 
-	// Initialize sub-systems
+	// Initialize editor components
 	if !editor_scene_tree_init() {
-		log_error(.ENGINE, "Failed to initialize scene tree")
 		return false
 	}
-
 	if !editor_inspector_init() {
-		log_error(.ENGINE, "Failed to initialize inspector")
+		return false
+	}
+	if !editor_viewport_init() {
 		return false
 	}
 
-	log_info(.ENGINE, "Editor manager initialized")
+	log_info(.ENGINE, "Editor initialized")
 	return true
 }
 
-// Shutdown the editor manager
-editor_manager_shutdown :: proc() {
+// Shutdown the editor
+editor_shutdown :: proc() {
 	if !editor.initialized {
 		return
 	}
 
-	// Shutdown sub-systems
 	editor_scene_tree_shutdown()
 	editor_inspector_shutdown()
-
-	// Clean up resources
-	delete(editor.available_scenes)
-	delete(editor.file_list)
+	editor_viewport_shutdown()
 
 	editor.initialized = false
-	log_info(.ENGINE, "Editor manager shut down")
+	log_info(.ENGINE, "Editor shut down")
 }
 
-// Update the editor manager
-editor_manager_update :: proc() {
-	when ODIN_DEBUG {
-		if !editor.initialized {
-			return
-		}
+// Update the editor
+editor_update :: proc() {
+	if !editor.initialized {
+		return
 	}
 
-	// Handle editor input
-	editor_manager_handle_input()
-
-	// Update sub-systems
 	editor_scene_tree_update()
 	editor_inspector_update()
+	// editor_viewport_update() // This was removed as viewport texture rendering is handled by engine_render
 }
 
-// Render the editor manager
-editor_manager_render :: proc() {
-	when ODIN_DEBUG {
-		if !editor.initialized {
-			return
-		}
+// Render the editor
+editor_render :: proc() {
+	if !editor.initialized {
+		return
 	}
 
-	// Render menu bar
+	// Render the main menu bar first
 	editor_menu_render()
 
-	// Render layout
+	// Render the editor layout (panels: scene tree, inspector)
 	editor_layout_render()
 
-	// Render dialogs
+	// Render the viewport ImGui window (acts as an overlay for the 3D scene)
+	if editor.viewport_open {
+		editor_viewport_render_ui()
+	}
+
+	// Render any active dialogs (should be last to appear on top)
 	editor_manager_render_dialogs()
 }
 

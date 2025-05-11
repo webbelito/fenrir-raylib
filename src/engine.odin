@@ -227,10 +227,14 @@ engine_shutdown :: proc() {
 
 // Update the engine
 engine_update :: proc() {
-	// Update time
+	if !engine.initialized {
+		return
+	}
+
+	// Update time first
 	time_update()
 
-	// Begin ImGui frame
+	// Begin ImGui frame (handles input, DeltaTime, etc.)
 	imgui_begin_frame()
 
 	// Handle camera movement based on mode
@@ -254,84 +258,66 @@ engine_update :: proc() {
 				engine.editor_camera.target += raylib.Vector3{0.1, 0, 0}
 			}
 		} else if engine.playing {
-			// Game camera controls
-			main_camera := scene_manager_get_main_camera()
-			if main_camera != 0 {
-				camera := ecs_get_camera(main_camera)
-				transform := ecs_get_transform(main_camera)
-				if camera != nil && transform != nil && camera.enabled {
-					// Handle camera movement
-					if raylib.IsKeyDown(.W) {
-						transform.position += raylib.Vector3{0, 0, -0.1}
-					}
-					if raylib.IsKeyDown(.S) {
-						transform.position += raylib.Vector3{0, 0, 0.1}
-					}
-					if raylib.IsKeyDown(.A) {
-						transform.position += raylib.Vector3{-0.1, 0, 0}
-					}
-					if raylib.IsKeyDown(.D) {
-						transform.position += raylib.Vector3{0.1, 0, 0}
-					}
-				}
-			}
+			// Game camera controls (example)
 		}
 	}
 
-	// Update scene
+	// Update scene logic
 	if scene_manager_is_loaded() {
 		scene_manager_update()
 	}
 
-	// Update editor
+	// Update editor logic (panel states, etc., but not their ImGui rendering definitions yet)
 	if editor.initialized {
-		editor_manager_update()
+		editor_update()
 	}
 }
 
 // Render the engine
 engine_render :: proc() {
-	raylib.BeginDrawing()
-	defer raylib.EndDrawing()
+	if !engine.initialized {
+		return
+	}
 
-	raylib.ClearBackground(raylib.BLACK)
+	raylib.BeginDrawing() // Main window drawing context
+	{
+		raylib.ClearBackground(raylib.BLACK)
 
-	// Begin 3D mode
-	if editor.initialized {
-		// Use editor camera
-		raylib.BeginMode3D(engine.editor_camera)
-		{
-			// Render scene
-			scene_manager_render()
-		}
-		raylib.EndMode3D()
-	} else if engine.playing {
-		// Use game camera
-		main_camera := scene_manager_get_main_camera()
-		if main_camera != 0 {
-			camera := ecs_get_camera(main_camera)
-			if camera != nil && camera.enabled {
-				raylib_camera := scene_manager_get_camera()
-				raylib.BeginMode3D(raylib_camera)
-				{
-					// Render scene
-					scene_manager_render()
-				}
-				raylib.EndMode3D()
+		// Step 1: Render the 3D scene directly into the designated viewport region.
+		if editor.initialized && editor.viewport_open { 	// Only if editor and viewport are active
+			// Calculate the target rectangle for the 3D viewport
+			// This logic should match how the ImGui viewport window is positioned/sized.
+			window_size := imgui.GetIO().DisplaySize
+			panel_width := window_size.x * 0.2
+			menu_bar_height := imgui.GetFrameHeight()
+
+			viewport_rect_x := i32(panel_width)
+			viewport_rect_y := i32(menu_bar_height)
+			viewport_rect_width := i32(window_size.x - (panel_width * 2))
+			viewport_rect_height := i32(window_size.y - menu_bar_height)
+
+			// Ensure positive dimensions for scissor region
+			if viewport_rect_width > 0 && viewport_rect_height > 0 {
+				editor_viewport_draw_3d_scene(
+					viewport_rect_x,
+					viewport_rect_y,
+					viewport_rect_width,
+					viewport_rect_height,
+				)
 			}
 		}
+
+		// Step 2: Define all ImGui UI elements.
+		// editor_render() will call ImGui functions for all panels,
+		// including editor_viewport_render() which now just defines an ImGui window overlay.
+		if editor.initialized {
+			editor_render()
+		}
+
+		// Step 3: ImGui takes all defined UI and renders it to the current Raylib target (the main window).
+		imgui_end_frame()
 	}
-
-	// Render editor UI
-	if editor.initialized {
-		editor_manager_render()
-	}
-
-	// End ImGui frame and render
-	imgui_end_frame()
-
-	// Render FPS
-	raylib.DrawFPS(10, 10)
+	raylib.EndDrawing()
 }
 
 // Check if the engine should continue running
