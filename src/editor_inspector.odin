@@ -62,7 +62,7 @@ editor_inspector_render :: proc() {
 	}
 
 	// Entity metadata section
-	if imgui.CollapsingHeader("Entity", {imgui.TreeNodeFlag.DefaultOpen}) {
+	if imgui.CollapsingHeader("Node", {imgui.TreeNodeFlag.DefaultOpen}) {
 		// Get the node for this entity
 		if node, ok := scene_manager.current_scene.nodes[editor.selected_entity]; ok {
 			// Entity name input
