@@ -34,6 +34,7 @@ Node :: struct {
 	parent_id: Entity,
 	children:  [dynamic]Entity,
 	expanded:  bool, // Whether the node is expanded in the scene tree
+	active:    bool, // Whether the node is active
 }
 
 // Scene file format for JSON serialization
@@ -105,6 +106,7 @@ scene_manager_init :: proc() {
 		parent_id = 0, // Root is its own parent
 		children  = make([dynamic]Entity),
 		expanded  = true, // Root node starts expanded
+		active    = true, // Root node starts active
 	}
 	scene_manager.current_scene.nodes[0] = root_node
 
@@ -234,6 +236,7 @@ scene_manager_new :: proc(name: string) -> bool {
 		parent_id = 0,
 		children  = make([dynamic]Entity),
 		expanded  = true,
+		active    = true, // Root node starts active
 	}
 	scene_manager.current_scene.nodes[0] = root_node
 
@@ -288,6 +291,7 @@ scene_manager_new :: proc(name: string) -> bool {
 		parent_id = 0, // Parent to root
 		children  = make([dynamic]Entity),
 		expanded  = true,
+		active    = true, // New nodes start active
 	}
 	scene_manager.current_scene.nodes[camera_entity] = camera_node
 
@@ -333,6 +337,7 @@ scene_manager_create_node :: proc(name: string, parent_id: Entity = 0) -> Entity
 		parent_id = parent_id,
 		children  = make([dynamic]Entity),
 		expanded  = true,
+		active    = true, // New nodes start active
 	}
 
 	// Add to scene
@@ -475,6 +480,7 @@ scene_manager_load :: proc(path: string) -> bool {
 		parent_id = 0,
 		children  = make([dynamic]Entity),
 		expanded  = true,
+		active    = true, // Root node starts active
 	}
 	scene_manager.current_scene.nodes[0] = root_node
 	scene_manager.current_scene.root_id = 0
@@ -542,6 +548,7 @@ scene_manager_load :: proc(path: string) -> bool {
 			parent_id = 0,
 			children  = make([dynamic]Entity),
 			expanded  = true,
+			active    = true, // New nodes start active
 		}
 		scene_manager.current_scene.nodes[camera_entity] = camera_node
 		append(&scene_manager.current_scene.entities, camera_entity)
@@ -679,6 +686,7 @@ scene_manager_load :: proc(path: string) -> bool {
 			parent_id = 0, // Always parent to root initially
 			children  = make([dynamic]Entity),
 			expanded  = true,
+			active    = true, // New nodes start active
 		}
 		scene_manager.current_scene.nodes[entity] = node
 		append(&scene_manager.current_scene.entities, entity)
@@ -1074,6 +1082,16 @@ scene_manager_update :: proc() {
 
 	// Update all entities in the scene
 	for entity in scene_manager.current_scene.entities {
+		// Skip root node (Entity 0)
+		if entity == 0 {
+			continue
+		}
+
+		// Skip inactive nodes
+		if node, ok := scene_manager.current_scene.nodes[entity]; ok && !node.active {
+			continue
+		}
+
 		// Get all components for this entity
 		components := ecs_get_components(entity)
 		defer delete(components)
@@ -1122,6 +1140,11 @@ scene_manager_render :: proc() {
 	for entity in scene_manager.current_scene.entities {
 		// Skip root node (Entity 0)
 		if entity == 0 {
+			continue
+		}
+
+		// Skip inactive nodes
+		if node, ok := scene_manager.current_scene.nodes[entity]; ok && !node.active {
 			continue
 		}
 
@@ -1314,6 +1337,7 @@ scene_manager_duplicate_node :: proc(node_id: Entity) -> Entity {
 			parent_id = node.parent_id,
 			children  = make([dynamic]Entity),
 			expanded  = node.expanded,
+			active    = true, // New nodes start active
 		}
 
 		// Add the new node to the scene
@@ -1345,4 +1369,24 @@ scene_manager_duplicate_node :: proc(node_id: Entity) -> Entity {
 	}
 
 	return 0
+}
+
+// Update a node's active state and propagate to children
+scene_manager_set_node_active :: proc(node_id: Entity, active: bool) {
+	if !scene_manager.current_scene.loaded {
+		return
+	}
+
+	if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
+		// Update this node's active state
+		node.active = active
+		scene_manager.current_scene.nodes[node_id] = node
+
+		// Propagate to all children
+		for child_id in node.children {
+			scene_manager_set_node_active(child_id, active)
+		}
+
+		scene_manager.current_scene.dirty = true
+	}
 }

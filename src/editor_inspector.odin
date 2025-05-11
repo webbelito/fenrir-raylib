@@ -82,9 +82,8 @@ editor_inspector_render :: proc() {
 			}
 
 			// Active toggle
-			if imgui.Checkbox("Active", &node.expanded) {
-				scene_manager.current_scene.nodes[editor.selected_entity] = node
-				scene_manager.current_scene.dirty = true
+			if imgui.Checkbox("Active", &node.active) {
+				scene_manager_set_node_active(editor.selected_entity, node.active)
 			}
 
 			// Tags dropdown

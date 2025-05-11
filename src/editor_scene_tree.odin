@@ -191,6 +191,11 @@ scene_tree_render_node :: proc(node_id: Entity) {
 		label := fmt.caprintf("%s###node_%d", node.name, node_id)
 		defer delete(label)
 
+		// Set text color based on active state
+		if !node.active {
+			imgui.PushStyleColor(imgui.Col.Text, imgui.GetColorU32(imgui.Col.TextDisabled))
+		}
+
 		// Create a tree node
 		flags := imgui.TreeNodeFlags{.OpenOnArrow}
 		if editor.selected_entity == node_id {
@@ -362,6 +367,11 @@ scene_tree_render_node :: proc(node_id: Entity) {
 					scene_tree.renaming_node = 0
 				}
 			}
+		}
+
+		// Pop the text color if we pushed it
+		if !node.active {
+			imgui.PopStyleColor()
 		}
 	}
 }
