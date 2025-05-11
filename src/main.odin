@@ -43,28 +43,58 @@ main :: proc() {
 		log_error(.ENGINE, "Failed to initialize ImGui")
 		return
 	}
-	defer imgui_shutdown()
+	// defer imgui_shutdown() // Defer shutdown to the very end
+
+	// ---- Experimental: Load and unload dummy textures ----
+	log_info(.ENGINE, "Creating more substantial dummy textures to offset IDs...")
+	// Create a few small, valid textures
+	for i in 0 ..< 3 {
+		dummy_image := raylib.GenImageColor(16, 16, raylib.BLUE)
+		dummy_tex := raylib.LoadTextureFromImage(dummy_image)
+		raylib.UnloadImage(dummy_image)
+		if raylib.IsTextureReady(dummy_tex) {
+			// log_info(.ENGINE, "Dummy texture %d created with ID: %d", i, dummy_tex.id)
+			// We could even try drawing with it briefly to ensure GPU interaction
+			// raylib.BeginDrawing() 
+			// raylib.DrawTexture(dummy_tex, 0,0, raylib.WHITE)
+			// raylib.EndDrawing()
+			raylib.UnloadTexture(dummy_tex)
+		} else {
+			// log_warning(.ENGINE, "Failed to create dummy texture %d", i)
+		}
+	}
+	// And a dummy render texture
+	dummy_rt := raylib.LoadRenderTexture(16, 16)
+	if raylib.IsRenderTextureReady(dummy_rt) {
+		// log_info(.ENGINE, "Dummy render texture created. ID: %d, Texture.ID: %d", dummy_rt.id, dummy_rt.texture.id)
+		raylib.UnloadRenderTexture(dummy_rt)
+	}
+	log_info(.ENGINE, "Dummy textures processed.")
+	// ---- End Experimental ----
 
 	// Initialize editor
 	if !editor_init() {
 		log_error(.ENGINE, "Failed to initialize editor")
 		return
 	}
-	defer editor_shutdown()
 
 	log_info(.ENGINE, "All systems initialized successfully")
 
 	// Main game loop
 	for !raylib.WindowShouldClose() {
-		// Update time
-		time_update()
-
-		// Update engine
+		// Update
 		engine_update()
 
-		// Render engine
+		// Render
 		engine_render()
 	}
+
+	// Shutdown
+	editor_shutdown()
+	imgui_shutdown() // Shutdown ImGui after editor
+	scene_manager_shutdown()
+	engine_shutdown()
+	time_shutdown()
 }
 
 // Initialize raylib with the given configuration

@@ -3,6 +3,7 @@ package main
 import imgui "../vendor/odin-imgui"
 import "core:fmt"
 import "core:log"
+import "core:strings"
 import raylib "vendor:raylib"
 
 // Entity is just an ID
@@ -278,4 +279,59 @@ cleanup_component :: proc(component: ^Component) {
 		interface.cleanup(component)
 		free(component)
 	}
+}
+
+// Remove a component from an entity
+ecs_remove_component :: proc(entity: Entity, type: Component_Type) {
+	if !ecs_has_component(entity, type) {
+		return
+	}
+
+	#partial switch type {
+	case .TRANSFORM:
+		delete_key(&entity_manager.transforms, entity)
+	case .RENDERER:
+		delete_key(&entity_manager.renderers, entity)
+	case .CAMERA:
+		delete_key(&entity_manager.cameras, entity)
+	case .LIGHT:
+		delete_key(&entity_manager.lights, entity)
+	case .SCRIPT:
+		delete_key(&entity_manager.scripts, entity)
+	}
+}
+
+// Render a generic component header with remove button
+render_component_header :: proc(
+	title: string,
+	entity: Entity,
+	component_type: Component_Type,
+) -> bool {
+	imgui.PushStyleColor(imgui.Col.Button, 0xFF0000FF) // Red color
+	imgui.PushStyleColor(imgui.Col.ButtonHovered, 0xFF3333FF) // Lighter red on hover
+	imgui.PushStyleColor(imgui.Col.ButtonActive, 0xFF6666FF) // Even lighter red when pressed
+
+	// Create a header with a remove button
+	imgui.PushStyleVarImVec2(imgui.StyleVar.FramePadding, imgui.Vec2{2, 2})
+
+	// Render the collapsing header
+	is_open := imgui.CollapsingHeader(strings.clone_to_cstring(title))
+
+	// Only show the X button if the header is expanded
+	if is_open {
+		imgui.Separator()
+		imgui.Spacing()
+		if imgui.Button("Remove Component", raylib.Vector2{imgui.GetWindowWidth() - 40, 20}) {
+			ecs_remove_component(entity, component_type)
+			imgui.PopStyleVar()
+			imgui.PopStyleColor(3)
+			return false
+		}
+		imgui.Spacing()
+	}
+
+	imgui.PopStyleVar()
+	imgui.PopStyleColor(3)
+
+	return is_open
 }

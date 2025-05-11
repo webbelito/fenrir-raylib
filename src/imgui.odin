@@ -18,7 +18,7 @@ imgui_init :: proc() -> bool {
 	// Configure ImGui
 	io := imgui.GetIO()
 	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad, .DockingEnable}
-	io.ConfigDockingWithShift = true // Enable docking with Shift key
+	io.ConfigDockingWithShift = false // Docking is default, Shift disables it (standard ImGui behavior)
 	io.IniFilename = nil // Disable imgui.ini
 	io.LogFilename = nil // Disable imgui_log.txt
 	io.DeltaTime = 1.0 / 60.0 // Set initial delta time
@@ -62,6 +62,10 @@ imgui_shutdown :: proc() {
 
 // Start a new ImGui frame
 imgui_begin_frame :: proc() {
+	// Update ImGui IO with our delta time
+	io := imgui.GetIO()
+	io.DeltaTime = get_delta_time()
+
 	imgui_rl.process_events()
 	imgui_rl.new_frame()
 	imgui.NewFrame()
@@ -80,4 +84,13 @@ imgui_end_frame :: proc() {
 imgui_show_demo :: proc() {
 	demo_open := true
 	imgui.ShowDemoWindow(&demo_open)
+}
+
+// Explicitly re-upload ImGui font texture
+imgui_reupload_font_texture :: proc() {
+	if err := imgui_rl.build_font_atlas(); err != nil {
+		log_error(.EDITOR, "Failed to re-build font atlas: %v", err)
+	} else {
+		log_info(.EDITOR, "Re-built ImGui font atlas.")
+	}
 }

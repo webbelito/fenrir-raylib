@@ -34,6 +34,7 @@ Node :: struct {
 	parent_id: Entity,
 	children:  [dynamic]Entity,
 	expanded:  bool, // Whether the node is expanded in the scene tree
+	active:    bool, // Whether the node is active
 }
 
 // Scene file format for JSON serialization
@@ -101,12 +102,16 @@ scene_manager_init :: proc() {
 	// Create root node
 	root_node := Node {
 		id        = 0,
-		name      = "Root",
+		name      = strings.clone(fmt.tprintf("%s (Root Node)", scene_manager.current_scene.name)),
 		parent_id = 0, // Root is its own parent
 		children  = make([dynamic]Entity),
 		expanded  = true, // Root node starts expanded
+		active    = true, // Root node starts active
 	}
 	scene_manager.current_scene.nodes[0] = root_node
+
+	// Add root node to entities list
+	append(&scene_manager.current_scene.entities, 0)
 
 	// Initialize the available scenes list
 	scene_manager_scan_available_scenes()
@@ -141,26 +146,34 @@ scene_manager_scan_available_scenes :: proc() {
 		return
 	}
 
-	// Walk through the directory
-	filepath.walk(
-		scenes_dir,
-		proc(info: os.File_Info, in_err: os.Errno, user_data: rawptr) -> (os.Errno, bool) {
-			if in_err != os.ERROR_NONE {
-				log_error(.ENGINE, "Error accessing path: %v", in_err)
-				return in_err, false
-			}
+	// Read directory contents
+	dir, err := os.open(scenes_dir)
+	if err != os.ERROR_NONE {
+		log_error(.ENGINE, "Failed to open scenes directory: %v", err)
+		return
+	}
+	defer os.close(dir)
 
-			if !info.is_dir && strings.has_suffix(info.name, ".json") {
-				// Add to available scenes list
-				scene_name := strings.clone(info.name)
-				append(&scene_manager.available_scenes, scene_name)
-				log_debug(.ENGINE, "Found scene: %s", scene_name)
-			}
+	// Read all files in the directory
+	files, read_err := os.read_dir(dir, -1)
+	if read_err != os.ERROR_NONE {
+		log_error(.ENGINE, "Failed to read scenes directory: %v", read_err)
+		return
+	}
+	defer os.file_info_slice_delete(files)
 
-			return os.ERROR_NONE, true
-		},
-		nil,
-	)
+	// Filter for .json files
+	for file in files {
+		if !file.is_dir {
+			// Add to available scenes list with .json extension
+			scene_name := strings.clone(file.name)
+			if !strings.has_suffix(scene_name, ".json") {
+				scene_name = fmt.tprintf("%s.json", scene_name)
+			}
+			append(&scene_manager.available_scenes, scene_name)
+			log_debug(.ENGINE, "Found scene: %s", scene_name)
+		}
+	}
 
 	log_info(.ENGINE, "Found %d scene(s)", len(scene_manager.available_scenes))
 }
@@ -216,16 +229,19 @@ scene_manager_new :: proc(name: string) -> bool {
 		root_id  = 0,
 	}
 
-	// Create root node with scene name + "(Root Node)"
-	root_name := fmt.tprintf("%s (Root Node)", name)
+	// Create root node
 	root_node := Node {
 		id        = 0,
-		name      = strings.clone(root_name),
+		name      = strings.clone(fmt.tprintf("%s (Root Node)", name)),
 		parent_id = 0,
 		children  = make([dynamic]Entity),
 		expanded  = true,
+		active    = true, // Root node starts active
 	}
 	scene_manager.current_scene.nodes[0] = root_node
+
+	// Add root node to entities list
+	append(&scene_manager.current_scene.entities, 0)
 
 	// Create default camera
 	camera_entity := ecs_create_entity()
@@ -236,24 +252,36 @@ scene_manager_new :: proc(name: string) -> bool {
 	}
 
 	// Add transform component to camera
-	transform := ecs_add_transform(camera_entity)
-	if transform == nil {
+	if !ecs_create_and_add_component(camera_entity, .TRANSFORM) {
 		log_error(.ENGINE, "Failed to add transform to camera")
 		ecs_destroy_entity(camera_entity)
 		scene_manager_cleanup()
 		return false
 	}
-	transform.position = {0, 5, -10}
-	transform.rotation = {0, 0, 0}
-	transform.scale = {1, 1, 1}
+
+	// Set transform values
+	if transform := ecs_get_component(camera_entity, .TRANSFORM); transform != nil {
+		transform := cast(^Transform_Component)transform
+		transform.position = {0, 5, -10}
+		transform.rotation = {0, 0, 0}
+		transform.scale = {1, 1, 1}
+	}
 
 	// Add camera component
-	camera := ecs_add_camera(camera_entity, 45.0, 0.1, 1000.0, true)
-	if camera == nil {
+	if !ecs_create_and_add_component(camera_entity, .CAMERA) {
 		log_error(.ENGINE, "Failed to add camera component")
 		ecs_destroy_entity(camera_entity)
 		scene_manager_cleanup()
 		return false
+	}
+
+	// Set camera values
+	if camera := ecs_get_component(camera_entity, .CAMERA); camera != nil {
+		camera := cast(^Camera)camera
+		camera.fov = 45.0
+		camera.near = 0.1
+		camera.far = 1000.0
+		camera.is_main = true
 	}
 
 	// Create a node for the camera
@@ -263,6 +291,7 @@ scene_manager_new :: proc(name: string) -> bool {
 		parent_id = 0, // Parent to root
 		children  = make([dynamic]Entity),
 		expanded  = true,
+		active    = true, // New nodes start active
 	}
 	scene_manager.current_scene.nodes[camera_entity] = camera_node
 
@@ -279,95 +308,72 @@ scene_manager_new :: proc(name: string) -> bool {
 	return true
 }
 
-// Create a new node in the scene
+// Create a new node in the current scene
 scene_manager_create_node :: proc(name: string, parent_id: Entity = 0) -> Entity {
-	log_info(.ENGINE, "Creating new node: %s with parent: %d", name, parent_id)
-
 	if !scene_manager.current_scene.loaded {
-		log_error(.ENGINE, "No scene is currently loaded")
+		log_error(.ENGINE, "No scene loaded")
 		return 0
 	}
 
-	// Verify parent exists
+	// Ensure parent exists
 	if parent_id != 0 {
 		if _, ok := scene_manager.current_scene.nodes[parent_id]; !ok {
-			log_error(.ENGINE, "Parent node not found: %d", parent_id)
+			log_error(.ENGINE, "Parent node %d does not exist", parent_id)
 			return 0
 		}
 	}
 
-	// Create the entity for this node
+	// Create new entity
 	entity := ecs_create_entity()
 	if entity == 0 {
 		log_error(.ENGINE, "Failed to create entity")
 		return 0
 	}
-	log_info(.ENGINE, "Created entity for node: %d", entity)
 
-	// Create the node
+	// Create node
 	node := Node {
 		id        = entity,
 		name      = strings.clone(name),
 		parent_id = parent_id,
 		children  = make([dynamic]Entity),
-		expanded  = true, // New nodes start expanded
+		expanded  = true,
+		active    = true, // New nodes start active
 	}
 
 	// Add to scene
 	scene_manager.current_scene.nodes[entity] = node
-	log_info(.ENGINE, "Added node to scene map")
+	append(&scene_manager.current_scene.entities, entity)
 
 	// Add to parent's children
-	if parent, ok := scene_manager.current_scene.nodes[parent_id]; ok {
-		append(&parent.children, entity)
-		scene_manager.current_scene.nodes[parent_id] = parent
-		log_info(.ENGINE, "Added node to parent's children")
+	if parent_id != 0 {
+		if parent, ok := scene_manager.current_scene.nodes[parent_id]; ok {
+			append(&parent.children, entity)
+			scene_manager.current_scene.nodes[parent_id] = parent
+		}
 	} else {
-		log_error(.ENGINE, "Parent node not found: %d", parent_id)
-		delete_key(&scene_manager.current_scene.nodes, entity)
-		delete(node.name)
-		delete(node.children)
+		// Add to root's children
+		if root, ok := scene_manager.current_scene.nodes[0]; ok {
+			append(&root.children, entity)
+			scene_manager.current_scene.nodes[0] = root
+		}
+	}
+
+	// Always add transform component to new nodes
+	if !ecs_create_and_add_component(entity, .TRANSFORM) {
+		log_error(.ENGINE, "Failed to add transform component to entity %d", entity)
+		ecs_destroy_entity(entity)
 		return 0
 	}
 
-	// Add transform component to the entity
-	if transform := ecs_add_transform(entity, {0, 0, 0}, {0, 0, 0}, {1, 1, 1}); transform == nil {
-		log_error(.ENGINE, "Failed to add transform component")
-		delete_key(&scene_manager.current_scene.nodes, entity)
-		delete(node.name)
-		delete(node.children)
-		return 0
+	// Set default transform values
+	if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
+		transform := cast(^Transform_Component)transform
+		transform.position = {0, 0, 0}
+		transform.rotation = {0, 0, 0}
+		transform.scale = {1, 1, 1}
 	}
-	log_info(.ENGINE, "Added transform component")
 
-	// Create a simple cube mesh
-	cube := raylib.GenMeshCube(1.0, 1.0, 1.0)
-	model_ptr := new(raylib.Model)
-	model_ptr^ = raylib.LoadModelFromMesh(cube)
-	model_ptr.materials[0].maps[0].color = raylib.RED
-
-	// Create a unique key for this node's cube
-	cube_key := fmt.tprintf("cube_%d", entity)
-
-	// Add renderer component with the cube
-	renderer := new(Renderer)
-	renderer^ = Renderer {
-		_base = Component{type = .RENDERER, entity = entity, enabled = true},
-		model_type = .CUBE, // Set the model type to cube
-		mesh = cube_key, // Use the unique key
-		material = "", // No material needed for the simple cube
-		visible = true,
-	}
-	ecs_add_component(entity, cast(^Component)renderer)
-
-	// Store the model in the asset cache with the unique key
-	asset_system.model_cache[cube_key] = model_ptr
-
-	// Add to scene entities for rendering
-	append(&scene_manager.current_scene.entities, entity)
-	scene_manager.current_scene.dirty = true
-	log_info(.ENGINE, "Node created successfully")
-
+	log_info(.ENGINE, "Created node: %s (ID: %d)", name, entity)
 	return entity
 }
 
@@ -467,22 +473,94 @@ scene_manager_load :: proc(path: string) -> bool {
 	scene_manager.current_scene.nodes = make(map[Entity]Node)
 	scene_manager.current_scene.entities = make([dynamic]Entity)
 
-	// Create root node with scene name + "(Root Node)"
-	root_name := fmt.tprintf("%s (Root Node)", scene_name)
+	// Create root node
 	root_node := Node {
 		id        = 0,
-		name      = strings.clone(root_name),
+		name      = strings.clone(fmt.tprintf("%s (Root Node)", scene_name)),
 		parent_id = 0,
 		children  = make([dynamic]Entity),
 		expanded  = true,
+		active    = true, // Root node starts active
 	}
 	scene_manager.current_scene.nodes[0] = root_node
 	scene_manager.current_scene.root_id = 0
+	append(&scene_manager.current_scene.entities, 0)
 
 	// First pass: Create all entities and their basic components
 	entity_map := make(map[string]Entity) // Map to store entity names to IDs
 	defer delete(entity_map)
 
+	// Check if we have a main camera in the scene
+	has_main_camera := false
+	for entity_data in scene_data.entities {
+		if camera, ok := entity_data.camera.(Camera_Data); ok && camera.is_main {
+			has_main_camera = true
+			break
+		}
+	}
+
+	// If no main camera exists, create one
+	if !has_main_camera {
+		camera_entity := ecs_create_entity()
+		if camera_entity == 0 {
+			log_error(.ENGINE, "Failed to create default camera entity")
+			scene_manager_cleanup()
+			return false
+		}
+
+		// Add transform component to camera
+		if !ecs_create_and_add_component(camera_entity, .TRANSFORM) {
+			log_error(.ENGINE, "Failed to add transform to default camera")
+			ecs_destroy_entity(camera_entity)
+			scene_manager_cleanup()
+			return false
+		}
+
+		// Set transform values
+		if transform := ecs_get_component(camera_entity, .TRANSFORM); transform != nil {
+			transform := cast(^Transform_Component)transform
+			transform.position = {0, 5, -10}
+			transform.rotation = {0, 0, 0}
+			transform.scale = {1, 1, 1}
+		}
+
+		// Add camera component
+		if !ecs_create_and_add_component(camera_entity, .CAMERA) {
+			log_error(.ENGINE, "Failed to add camera component")
+			ecs_destroy_entity(camera_entity)
+			scene_manager_cleanup()
+			return false
+		}
+
+		// Set camera values
+		if camera := ecs_get_component(camera_entity, .CAMERA); camera != nil {
+			camera := cast(^Camera)camera
+			camera.fov = 45.0
+			camera.near = 0.1
+			camera.far = 1000.0
+			camera.is_main = true
+		}
+
+		// Create a node for the camera
+		camera_node := Node {
+			id        = camera_entity,
+			name      = strings.clone("Main Camera"),
+			parent_id = 0,
+			children  = make([dynamic]Entity),
+			expanded  = true,
+			active    = true, // New nodes start active
+		}
+		scene_manager.current_scene.nodes[camera_entity] = camera_node
+		append(&scene_manager.current_scene.entities, camera_entity)
+
+		// Add camera to root's children
+		if root, ok := scene_manager.current_scene.nodes[0]; ok {
+			append(&root.children, camera_entity)
+			scene_manager.current_scene.nodes[0] = root
+		}
+	}
+
+	// Load scene entities
 	for entity_data in scene_data.entities {
 		entity := ecs_create_entity()
 		if entity == 0 {
@@ -494,21 +572,68 @@ scene_manager_load :: proc(path: string) -> bool {
 		entity_map[entity_data.name] = entity
 
 		// Add transform component
-		ecs_add_transform(
-			entity,
-			entity_data.transform.position,
-			entity_data.transform.rotation,
-			entity_data.transform.scale,
-		)
+		if !ecs_create_and_add_component(entity, .TRANSFORM) {
+			log_error(.ENGINE, "Failed to add transform component to entity %d", entity)
+			ecs_destroy_entity(entity)
+			continue
+		}
+
+		// Set transform values
+		if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
+			transform := cast(^Transform_Component)transform
+			transform.position = {
+				entity_data.transform.position[0],
+				entity_data.transform.position[1],
+				entity_data.transform.position[2],
+			}
+			transform.rotation = {
+				entity_data.transform.rotation[0],
+				entity_data.transform.rotation[1],
+				entity_data.transform.rotation[2],
+			}
+			transform.scale = {
+				entity_data.transform.scale[0],
+				entity_data.transform.scale[1],
+				entity_data.transform.scale[2],
+			}
+		}
 
 		// Add renderer component if present
 		if renderer, ok := entity_data.renderer.(Renderer_Data); ok {
-			ecs_add_renderer(entity, renderer.mesh_path, renderer.material_path)
+			// Determine model type based on mesh path
+			model_type: Model_Type = .CUBE
+			if strings.has_suffix(renderer.mesh_path, "ambulance.glb") {
+				model_type = .AMBULANCE
+			}
+
+			if !ecs_create_and_add_component(entity, .RENDERER) {
+				log_error(.ENGINE, "Failed to add renderer component to entity %d", entity)
+				continue
+			}
+
+			if renderer_comp := ecs_get_component(entity, .RENDERER); renderer_comp != nil {
+				renderer_comp := cast(^Renderer)renderer_comp
+				renderer_comp.mesh = renderer.mesh_path
+				renderer_comp.material = renderer.material_path
+				renderer_comp.model_type = model_type
+				renderer_comp.visible = true
+			}
 		}
 
 		// Add camera component if present
 		if camera, ok := entity_data.camera.(Camera_Data); ok {
-			ecs_add_camera(entity, camera.fov, camera.near, camera.far, camera.is_main)
+			if !ecs_create_and_add_component(entity, .CAMERA) {
+				log_error(.ENGINE, "Failed to add camera component to entity %d", entity)
+				continue
+			}
+
+			if camera_comp := ecs_get_component(entity, .CAMERA); camera_comp != nil {
+				camera_comp := cast(^Camera)camera_comp
+				camera_comp.fov = camera.fov
+				camera_comp.near = camera.near
+				camera_comp.far = camera.far
+				camera_comp.is_main = camera.is_main
+			}
 		}
 
 		// Add light component if present
@@ -526,19 +651,32 @@ scene_manager_load :: proc(path: string) -> bool {
 				light_type = .POINT
 			}
 
-			ecs_add_light(
-				entity,
-				light_type,
-				light.color,
-				light.intensity,
-				light.range,
-				light.spot_angle,
-			)
+			if !ecs_create_and_add_component(entity, .LIGHT) {
+				log_error(.ENGINE, "Failed to add light component to entity %d", entity)
+				continue
+			}
+
+			if light_comp := ecs_get_component(entity, .LIGHT); light_comp != nil {
+				light_comp := cast(^Light)light_comp
+				light_comp.light_type = light_type
+				light_comp.color = {light.color[0], light.color[1], light.color[2]}
+				light_comp.intensity = light.intensity
+				light_comp.range = light.range
+				light_comp.spot_angle = light.spot_angle
+			}
 		}
 
 		// Add script component if present
 		if script, ok := entity_data.script.(Script_Data); ok {
-			ecs_add_script(entity, script.script_name)
+			if !ecs_create_and_add_component(entity, .SCRIPT) {
+				log_error(.ENGINE, "Failed to add script component to entity %d", entity)
+				continue
+			}
+
+			if script_comp := ecs_get_component(entity, .SCRIPT); script_comp != nil {
+				script_comp := cast(^Script)script_comp
+				script_comp.script_name = script.script_name
+			}
 		}
 
 		// Create node for this entity
@@ -548,6 +686,7 @@ scene_manager_load :: proc(path: string) -> bool {
 			parent_id = 0, // Always parent to root initially
 			children  = make([dynamic]Entity),
 			expanded  = true,
+			active    = true, // New nodes start active
 		}
 		scene_manager.current_scene.nodes[entity] = node
 		append(&scene_manager.current_scene.entities, entity)
@@ -581,8 +720,19 @@ scene_manager_save :: proc(path: string = "") -> bool {
 
 		// If no path set, create one in assets/scenes
 		if save_path == "" {
-			save_path = fmt.tprintf("assets/scenes/%s.json", scene_manager.current_scene.name)
+			// Use the scene name directly
+			save_path = fmt.tprintf("assets/scenes/%s", scene_manager.current_scene.name)
 		}
+	} else {
+		// If a path is provided, ensure it's in the scenes directory
+		if !strings.has_prefix(save_path, "assets/scenes/") {
+			save_path = fmt.tprintf("assets/scenes/%s", save_path)
+		}
+	}
+
+	// Always ensure the path has .json extension
+	if !strings.has_suffix(save_path, ".json") {
+		save_path = fmt.tprintf("%s.json", save_path)
 	}
 
 	log_info(.ENGINE, "Saving scene to: %s", save_path)
@@ -666,7 +816,10 @@ scene_manager_save :: proc(path: string = "") -> bool {
 	// Ensure directory exists
 	dir := filepath.dir(save_path)
 	if !os.exists(dir) {
-		os.make_directory(dir)
+		if err := os.make_directory(dir); err != 0 {
+			log_error(.ENGINE, "Failed to create directory: %s (Error: %v)", dir, err)
+			return false
+		}
 	}
 
 	// Write to file
@@ -929,6 +1082,16 @@ scene_manager_update :: proc() {
 
 	// Update all entities in the scene
 	for entity in scene_manager.current_scene.entities {
+		// Skip root node (Entity 0)
+		if entity == 0 {
+			continue
+		}
+
+		// Skip inactive nodes
+		if node, ok := scene_manager.current_scene.nodes[entity]; ok && !node.active {
+			continue
+		}
+
 		// Get all components for this entity
 		components := ecs_get_components(entity)
 		defer delete(components)
@@ -975,22 +1138,56 @@ scene_manager_render :: proc() {
 
 	// Render all entities
 	for entity in scene_manager.current_scene.entities {
-		// Skip root node (Entity 0) and camera entities
-		if entity == 0 || ecs_get_camera(entity) != nil {
+		// Skip root node (Entity 0)
+		if entity == 0 {
 			continue
 		}
 
-		// Get transform component
-		transform := ecs_get_transform(entity)
-		if transform == nil {
-			log_warning(.ENGINE, "Entity %d has no transform component", entity)
+		// Skip inactive nodes
+		if node, ok := scene_manager.current_scene.nodes[entity]; ok && !node.active {
 			continue
 		}
+
+		// Skip entities without transform components
+		transform := ecs_get_transform(entity)
+		if transform == nil {
+			continue
+		}
+
+		// Skip camera entities
+		if ecs_get_camera(entity) != nil {
+			continue
+		}
+
+		// Get world transform
+		world_pos, world_rot, world_scale := get_world_transform(entity)
 
 		// Get renderer component
 		renderer := ecs_get_renderer(entity)
+
+		// In editor mode, we want to visualize all entities
 		if renderer == nil {
-			log_warning(.ENGINE, "Entity %d has no renderer component", entity)
+			// Draw a simple gizmo for entities without renderer
+			gizmo_size: f32 = 0.5
+
+			// Draw a small cube at the entity's position
+			raylib.DrawCube(world_pos, gizmo_size, gizmo_size, gizmo_size, raylib.GRAY)
+
+			// Draw coordinate axes for the gizmo
+			axis_length: f32 = gizmo_size * 2
+			raylib.DrawLine3D(world_pos, world_pos + {axis_length, 0, 0}, raylib.RED)
+			raylib.DrawLine3D(world_pos, world_pos + {0, axis_length, 0}, raylib.GREEN)
+			raylib.DrawLine3D(world_pos, world_pos + {0, 0, axis_length}, raylib.BLUE)
+
+			// Draw a wireframe cube to show the entity's bounds
+			raylib.DrawCubeWires(
+				world_pos,
+				gizmo_size * 2,
+				gizmo_size * 2,
+				gizmo_size * 2,
+				raylib.DARKGRAY,
+			)
+
 			continue
 		}
 
@@ -1040,14 +1237,11 @@ scene_manager_render :: proc() {
 			continue
 		}
 
-		// Set model transform
-		rotation_matrix := raylib.MatrixRotateXYZ(transform.rotation)
-		translation_matrix := raylib.MatrixTranslate(
-			transform.position.x,
-			transform.position.y,
-			transform.position.z,
-		)
-		model.transform = rotation_matrix * translation_matrix
+		// Set model transform using world transform
+		rotation_matrix := raylib.MatrixRotateXYZ(world_rot)
+		translation_matrix := raylib.MatrixTranslate(world_pos.x, world_pos.y, world_pos.z)
+		scale_matrix := raylib.MatrixScale(world_scale.x, world_scale.y, world_scale.z)
+		model.transform = rotation_matrix * translation_matrix * scale_matrix
 
 		// Draw model
 		raylib.DrawModel(model^, {0, 0, 0}, 1.0, raylib.WHITE)
@@ -1070,36 +1264,67 @@ scene_manager_duplicate_node :: proc(node_id: Entity) -> Entity {
 
 		// Copy all components from the original entity
 		if transform := ecs_get_transform(node_id); transform != nil {
-			new_transform := ecs_add_transform(new_entity)
-			if new_transform != nil {
+			if !ecs_create_and_add_component(new_entity, .TRANSFORM) {
+				log_error(.ENGINE, "Failed to add transform component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_transform := ecs_get_component(new_entity, .TRANSFORM); new_transform != nil {
+				new_transform := cast(^Transform_Component)new_transform
 				new_transform^ = transform^
 			}
 		}
 
 		if renderer := ecs_get_renderer(node_id); renderer != nil {
-			new_renderer := ecs_add_renderer(new_entity)
-			if new_renderer != nil {
+			if !ecs_create_and_add_component(new_entity, .RENDERER) {
+				log_error(.ENGINE, "Failed to add renderer component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_renderer := ecs_get_component(new_entity, .RENDERER); new_renderer != nil {
+				new_renderer := cast(^Renderer)new_renderer
 				new_renderer^ = renderer^
 			}
 		}
 
 		if camera := ecs_get_camera(node_id); camera != nil {
-			new_camera := ecs_add_camera(new_entity, camera.fov, camera.near, camera.far, false)
-			if new_camera != nil {
+			if !ecs_create_and_add_component(new_entity, .CAMERA) {
+				log_error(.ENGINE, "Failed to add camera component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_camera := ecs_get_component(new_entity, .CAMERA); new_camera != nil {
+				new_camera := cast(^Camera)new_camera
 				new_camera^ = camera^
+				new_camera.is_main = false // Ensure only one main camera
 			}
 		}
 
 		if light := ecs_get_light(node_id); light != nil {
-			new_light := ecs_add_light(new_entity, light.light_type)
-			if new_light != nil {
+			if !ecs_create_and_add_component(new_entity, .LIGHT) {
+				log_error(.ENGINE, "Failed to add light component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_light := ecs_get_component(new_entity, .LIGHT); new_light != nil {
+				new_light := cast(^Light)new_light
 				new_light^ = light^
 			}
 		}
 
 		if script := ecs_get_script(node_id); script != nil {
-			new_script := ecs_add_script(new_entity, script.script_name)
-			if new_script != nil {
+			if !ecs_create_and_add_component(new_entity, .SCRIPT) {
+				log_error(.ENGINE, "Failed to add script component to duplicated entity")
+				ecs_destroy_entity(new_entity)
+				return 0
+			}
+
+			if new_script := ecs_get_component(new_entity, .SCRIPT); new_script != nil {
+				new_script := cast(^Script)new_script
 				new_script^ = script^
 			}
 		}
@@ -1112,6 +1337,7 @@ scene_manager_duplicate_node :: proc(node_id: Entity) -> Entity {
 			parent_id = node.parent_id,
 			children  = make([dynamic]Entity),
 			expanded  = node.expanded,
+			active    = true, // New nodes start active
 		}
 
 		// Add the new node to the scene
@@ -1143,4 +1369,24 @@ scene_manager_duplicate_node :: proc(node_id: Entity) -> Entity {
 	}
 
 	return 0
+}
+
+// Update a node's active state and propagate to children
+scene_manager_set_node_active :: proc(node_id: Entity, active: bool) {
+	if !scene_manager.current_scene.loaded {
+		return
+	}
+
+	if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
+		// Update this node's active state
+		node.active = active
+		scene_manager.current_scene.nodes[node_id] = node
+
+		// Propagate to all children
+		for child_id in node.children {
+			scene_manager_set_node_active(child_id, active)
+		}
+
+		scene_manager.current_scene.dirty = true
+	}
 }

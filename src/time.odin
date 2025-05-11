@@ -64,3 +64,8 @@ get_fps :: proc() -> i32 {
 get_frame_count :: proc() -> u64 {
 	return time_state.frame_count
 }
+
+// Shutdown time system
+time_shutdown :: proc() {
+	log_info(.ENGINE, "Shutting down time system")
+}
