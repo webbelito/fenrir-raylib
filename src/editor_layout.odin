@@ -3,30 +3,24 @@ package main
 import imgui_rl "../vendor/imgui_impl_raylib"
 import imgui "../vendor/odin-imgui"
 
-// Render the editor layout
+// Render the editor layout - now renders windows that can be docked
 editor_layout_render :: proc() {
-	// Get the main window size
-	window_size := imgui.GetIO().DisplaySize
-	panel_width := window_size.x * 0.2 // 20% of screen width
-	menu_bar_height := imgui.GetFrameHeight() // Get the height of the menu bar
-
-	// Render scene tree panel (fixed on left)
+	// Render scene tree panel 
+	// No explicit SetNextWindowPos/Size needed; let the docking system handle it.
 	if editor.scene_tree_open {
-		imgui.SetNextWindowPos({0, menu_bar_height})
-		imgui.SetNextWindowSize({panel_width, window_size.y - menu_bar_height})
-		window_flags := imgui.WindowFlags{.NoCollapse, .NoResize, .NoMove}
-		if imgui.Begin("Scene Tree", &editor.scene_tree_open, window_flags) {
+		// Standard window flags, can be customized (e.g., add .MenuBar if a window has its own menu)
+		// For now, default flags are fine, or remove specific NoResize/NoMove flags.
+		// Let's use no specific flags initially to allow full docking behavior.
+		if imgui.Begin("Scene Tree", &editor.scene_tree_open) {
 			editor_scene_tree_render()
 		}
 		imgui.End()
 	}
 
-	// Render inspector panel (fixed on right)
+	// Render inspector panel
+	// No explicit SetNextWindowPos/Size needed.
 	if editor.inspector_open {
-		imgui.SetNextWindowPos({window_size.x - panel_width, menu_bar_height})
-		imgui.SetNextWindowSize({panel_width, window_size.y - menu_bar_height})
-		window_flags := imgui.WindowFlags{.NoCollapse, .NoResize, .NoMove}
-		if imgui.Begin("Inspector", &editor.inspector_open, window_flags) {
+		if imgui.Begin("Inspector", &editor.inspector_open) {
 			editor_inspector_render()
 		}
 		imgui.End()

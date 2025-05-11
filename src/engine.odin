@@ -29,12 +29,13 @@ Engine_Config :: struct {
 
 // Engine state
 Engine_State :: struct {
-	initialized:   bool,
-	running:       bool,
-	playing:       bool, // Add playing state
-	time:          Time_State,
-	config:        Engine_Config,
-	editor_camera: raylib.Camera3D, // Editor-specific camera
+	initialized:               bool,
+	running:                   bool,
+	playing:                   bool, // Add playing state
+	time:                      Time_State,
+	config:                    Engine_Config,
+	editor_camera:             raylib.Camera3D, // Editor-specific camera
+	needs_initial_dock_layout: bool, // Added flag for initial dock layout
 }
 
 // Global engine state
@@ -180,6 +181,7 @@ engine_init :: proc(config: Engine_Config) -> bool {
 	engine.running = true
 	engine.playing = false
 	engine.config = config
+	engine.needs_initial_dock_layout = true // Initialize the flag
 
 	// Initialize editor camera
 	engine.editor_camera = raylib.Camera3D {
@@ -283,38 +285,101 @@ engine_render :: proc() {
 	{
 		raylib.ClearBackground(raylib.BLACK)
 
-		// Step 1: Render the 3D scene directly into the designated viewport region.
-		if editor.initialized && editor.viewport_open { 	// Only if editor and viewport are active
-			// Calculate the target rectangle for the 3D viewport
-			// This logic should match how the ImGui viewport window is positioned/sized.
-			window_size := imgui.GetIO().DisplaySize
-			panel_width := window_size.x * 0.2
-			menu_bar_height := imgui.GetFrameHeight()
+		// Create a full-screen window to host the dockspace and main menu
+		main_viewport_imgui := imgui.GetMainViewport()
+		imgui.SetNextWindowPos(main_viewport_imgui.WorkPos)
+		imgui.SetNextWindowSize(main_viewport_imgui.WorkSize)
+		imgui.SetNextWindowViewport(main_viewport_imgui.ID_)
 
-			viewport_rect_x := i32(panel_width)
-			viewport_rect_y := i32(menu_bar_height)
-			viewport_rect_width := i32(window_size.x - (panel_width * 2))
-			viewport_rect_height := i32(window_size.y - menu_bar_height)
+		dockspace_host_window_flags := imgui.WindowFlags {
+			.NoDocking,
+			.NoTitleBar,
+			.NoCollapse,
+			.NoResize,
+			.NoMove,
+			.NoBringToFrontOnFocus,
+			.NoNavFocus,
+			.NoBackground,
+			.MenuBar,
+		}
 
-			// Ensure positive dimensions for scissor region
-			if viewport_rect_width > 0 && viewport_rect_height > 0 {
-				editor_viewport_draw_3d_scene(
-					viewport_rect_x,
-					viewport_rect_y,
-					viewport_rect_width,
-					viewport_rect_height,
+		imgui.PushStyleVar(.WindowRounding, 0.0)
+		imgui.PushStyleVar(.WindowBorderSize, 0.0)
+		// Skipping PushStyleVar for .WindowPadding to avoid linter issue.
+		// This means the DockSpace Host window will have default padding.
+
+		imgui.Begin("DockSpace Host", nil, dockspace_host_window_flags)
+		{
+			// We pushed 2 style vars, so pop 2.
+			imgui.PopStyleVar(2)
+
+			// Submit the DockSpace using positional arguments
+			dockspace_id_val := imgui.GetID("MainDockspace")
+
+			// Setup initial dock layout if needed
+			if engine.needs_initial_dock_layout {
+				main_viewport_size := main_viewport_imgui.WorkSize // Use WorkSize for usable area
+
+				imgui.DockBuilderRemoveNode(dockspace_id_val)
+				imgui.DockBuilderAddNode(dockspace_id_val, {})
+				imgui.DockBuilderSetNodeSize(dockspace_id_val, main_viewport_size)
+
+				dock_id_scene_tree: imgui.ID
+				dock_id_center_right: imgui.ID
+				// Split root dockspace: left part for scene tree, remaining is center_right
+				// The returned ID from DockBuilderSplitNode is the ID of the *parent* node that was split.
+				// The new child nodes are in the out parameters.
+				_ = imgui.DockBuilderSplitNode(
+					dockspace_id_val,
+					imgui.Dir.Left,
+					0.20,
+					&dock_id_scene_tree,
+					&dock_id_center_right,
 				)
+
+				dock_id_inspector: imgui.ID
+				dock_id_viewport: imgui.ID
+				// Split center_right: right part for inspector, remaining is viewport (final center)
+				_ = imgui.DockBuilderSplitNode(
+					dock_id_center_right,
+					imgui.Dir.Right,
+					0.25,
+					&dock_id_inspector,
+					&dock_id_viewport,
+				)
+
+				imgui.DockBuilderDockWindow("Scene Tree", dock_id_scene_tree)
+				imgui.DockBuilderDockWindow("Inspector", dock_id_inspector)
+				imgui.DockBuilderDockWindow("Viewport", dock_id_viewport)
+
+				imgui.DockBuilderFinish(dockspace_id_val)
+				engine.needs_initial_dock_layout = false
+			}
+
+			dock_size_val := imgui.Vec2{0.0, 0.0}
+			dock_node_flags_val := imgui.DockNodeFlags{.PassthruCentralNode}
+			imgui.DockSpace(dockspace_id_val, dock_size_val, dock_node_flags_val)
+
+			// Call the main editor rendering function
+			if editor.initialized {
+				editor_render()
 			}
 		}
+		imgui.End() // End DockSpace Host window
 
-		// Step 2: Define all ImGui UI elements.
-		// editor_render() will call ImGui functions for all panels,
-		// including editor_viewport_render() which now just defines an ImGui window overlay.
-		if editor.initialized {
-			editor_render()
+		// Draw the 3D scene
+		if editor.viewport_open &&
+		   viewport_state.rect_width > 0 &&
+		   viewport_state.rect_height > 0 {
+			editor_viewport_draw_3d_scene(
+				viewport_state.rect_x,
+				viewport_state.rect_y,
+				viewport_state.rect_width,
+				viewport_state.rect_height,
+			)
 		}
 
-		// Step 3: ImGui takes all defined UI and renders it to the current Raylib target (the main window).
+		// ImGui rendering is finalized here
 		imgui_end_frame()
 	}
 	raylib.EndDrawing()

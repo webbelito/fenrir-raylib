@@ -6,15 +6,17 @@ import "core:log"
 import raylib "vendor:raylib"
 import rlgl "vendor:raylib/rlgl"
 
-// Viewport state - simplified, no render_texture needed for this approach
+// Viewport state
 Viewport_State :: struct {
 	initialized: bool,
 	open:        bool,
-	// width:       i32, // May still be useful for camera aspect if calculated from ImGui window
-	// height:      i32,
+	rect_x:      i32, // Screen-space X of the viewport content area
+	rect_y:      i32, // Screen-space Y of the viewport content area
+	rect_width:  i32, // Width of the viewport content area
+	rect_height: i32, // Height of the viewport content area
 }
 
-viewport_state: Viewport_State // Renamed from viewport to avoid conflict with rlgl.Viewport
+viewport_state: Viewport_State
 
 // Initialize the viewport
 editor_viewport_init :: proc() -> bool {
@@ -24,6 +26,11 @@ editor_viewport_init :: proc() -> bool {
 	viewport_state = Viewport_State {
 		initialized = true,
 		open        = true,
+		// Initialize rect to 0, it will be updated each frame
+		rect_x      = 0,
+		rect_y      = 0,
+		rect_width  = 0,
+		rect_height = 0,
 	}
 	log_info(.ENGINE, "Viewport initialized (Scissor Mode)")
 	return true
@@ -40,7 +47,12 @@ editor_viewport_shutdown :: proc() {
 
 // Render the 3D scene directly into a specified region of the main window
 editor_viewport_draw_3d_scene :: proc(x, y, width, height: i32) {
-	if width <= 0 || height <= 0 {return} 	// Ensure valid dimensions
+	if width <= 0 || height <= 0 {
+		// Reset viewport rect if invalid to prevent drawing with old values if window is hidden/minimized
+		viewport_state.rect_width = 0
+		viewport_state.rect_height = 0
+		return
+	}
 
 	// Get current screen dimensions for resetting viewport later
 	screen_width := raylib.GetScreenWidth()
@@ -51,9 +63,9 @@ editor_viewport_draw_3d_scene :: proc(x, y, width, height: i32) {
 		// Set the OpenGL viewport to the scissor rectangle
 		rlgl.Viewport(x, screen_height - (y + height), width, height)
 
-		raylib.BeginMode3D(engine.editor_camera) // Camera's projection matrix will now be set up for this viewport
+		raylib.BeginMode3D(engine.editor_camera)
 		{
-			scene_manager_render() // Renders the 3D scene
+			scene_manager_render()
 		}
 		raylib.EndMode3D()
 
@@ -65,37 +77,47 @@ editor_viewport_draw_3d_scene :: proc(x, y, width, height: i32) {
 
 // Render the viewport ImGui UI (which now acts as a frame/overlay)
 editor_viewport_render_ui :: proc() {
-	// Calculate ImGui window position and size (as before)
-	window_size := imgui.GetIO().DisplaySize
-	panel_width := window_size.x * 0.2
-	menu_bar_height := imgui.GetFrameHeight()
-
-	viewport_imgui_x := panel_width
-	viewport_imgui_y := menu_bar_height
-	viewport_imgui_width := window_size.x - (panel_width * 2)
-	viewport_imgui_height := window_size.y - menu_bar_height
-
-	imgui.SetNextWindowPos(imgui.Vec2{viewport_imgui_x, viewport_imgui_y})
-	imgui.SetNextWindowSize(imgui.Vec2{viewport_imgui_width, viewport_imgui_height})
-
+	// Window flags for a dockable viewport window
+	// .NoBackground makes the ImGui window transparent for the 3D scene drawn underneath.
+	// .NoScrollbar and .NoScrollWithMouse are for convenience as camera controls the view.
 	window_flags := imgui.WindowFlags {
-		.NoTitleBar,
-		.NoResize,
-		.NoMove,
+		.NoBackground,
 		.NoScrollbar,
 		.NoScrollWithMouse,
-		.NoCollapse,
-		.NoBackground,
-		.NoBringToFrontOnFocus,
-		.NoDocking,
+		// Consider adding .MenuBar if you want a menu bar specifically for the viewport
 	}
 
 	if imgui.Begin("Viewport", &viewport_state.open, window_flags) {
+		// Get the content region's top-left screen position and size
+		// This is the area where the 3D scene should be rendered.
+		window_pos := imgui.GetWindowPos()
+		content_min_relative := imgui.GetWindowContentRegionMin() // Relative to window_pos
+		content_max_relative := imgui.GetWindowContentRegionMax() // Relative to window_pos
 
+		current_rect_x := i32(window_pos.x + content_min_relative.x)
+		current_rect_y := i32(window_pos.y + content_min_relative.y)
+		current_rect_width := i32(content_max_relative.x - content_min_relative.x)
+		current_rect_height := i32(content_max_relative.y - content_min_relative.y)
+
+		// Update viewport_state only if the size is valid
+		if current_rect_width > 0 && current_rect_height > 0 {
+			viewport_state.rect_x = current_rect_x
+			viewport_state.rect_y = current_rect_y
+			viewport_state.rect_width = current_rect_width
+			viewport_state.rect_height = current_rect_height
+		} else {
+			// If window is collapsed or too small, invalidate the rect
+			viewport_state.rect_width = 0
+			viewport_state.rect_height = 0
+		}
+
+		// Example: Display viewport size or other info as an overlay
 		imgui.SetCursorPos(imgui.Vec2{10, 10})
-		imgui.Text("3D Viewport (Scissor Mode)")
-
-		// 
+		imgui.Text(
+			"3D Viewport (Size: %dx%d)",
+			viewport_state.rect_width,
+			viewport_state.rect_height,
+		)
 
 	}
 	imgui.End()

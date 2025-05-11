@@ -100,12 +100,20 @@ editor_render :: proc() {
 	}
 
 	// Render the main menu bar first
+	// This will be part of the "DockSpace Host" window defined in engine_render,
+	// or if using DockSpaceOverViewport, it would be separate.
+	// Given engine.odin's current structure, this should be fine.
 	editor_menu_render()
+
+	// The DockSpace is now handled by engine.odin's engine_render function.
+	// This function (editor_render) now just calls the rendering for individual editor parts,
+	// which will become dockable windows.
 
 	// Render the editor layout (panels: scene tree, inspector)
 	editor_layout_render()
 
 	// Render the viewport ImGui window (acts as an overlay for the 3D scene)
+	// This will also update viewport_state.rect_* variables for the 3D scene drawing.
 	if editor.viewport_open {
 		editor_viewport_render_ui()
 	}

@@ -18,7 +18,7 @@ imgui_init :: proc() -> bool {
 	// Configure ImGui
 	io := imgui.GetIO()
 	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad, .DockingEnable}
-	io.ConfigDockingWithShift = true // Enable docking with Shift key
+	io.ConfigDockingWithShift = false // Docking is default, Shift disables it (standard ImGui behavior)
 	io.IniFilename = nil // Disable imgui.ini
 	io.LogFilename = nil // Disable imgui_log.txt
 	io.DeltaTime = 1.0 / 60.0 // Set initial delta time
