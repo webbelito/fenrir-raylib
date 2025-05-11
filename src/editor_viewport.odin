@@ -9,7 +9,6 @@ import rlgl "vendor:raylib/rlgl"
 // Viewport state
 Viewport_State :: struct {
 	initialized: bool,
-	open:        bool,
 	rect_x:      i32,
 	rect_y:      i32,
 	rect_width:  i32,
@@ -25,7 +24,6 @@ editor_viewport_init :: proc() -> bool {
 	}
 	viewport_state = Viewport_State {
 		initialized = true,
-		open        = true,
 		rect_x      = 0,
 		rect_y      = 0,
 		rect_width  = 0,
@@ -78,7 +76,7 @@ editor_viewport_draw_3d_scene :: proc(x, y, width, height: i32) {
 editor_viewport_render_ui :: proc() {
 	window_flags := imgui.WindowFlags{.NoBackground, .NoScrollbar, .NoScrollWithMouse}
 
-	if imgui.Begin("Viewport", &viewport_state.open, window_flags) {
+	if imgui.Begin("Viewport", &editor.viewport_open, window_flags) {
 		window_pos := imgui.GetWindowPos()
 		content_min_relative := imgui.GetWindowContentRegionMin()
 		content_max_relative := imgui.GetWindowContentRegionMax()
