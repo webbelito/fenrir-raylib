@@ -311,96 +311,116 @@ log_log :: proc(
 		return
 	}
 
-	// Save current context
 	prev_context := context
-
-	// Switch to logger context
 	context = log_default_logger.ctx
 
+	// Use fmt.tprintf for varargs handling, which is more idiomatic Odin for this case
+	// than trying to reconstruct stb.sprintf behavior here.
+	// The original log_log already did this, so keeping it.
 	formatted_message := fmt.tprintf(message, ..args)
 	fmt_message := log_format_message(
 		category,
 		level,
 		formatted_message,
-		loc,
+		loc, // This loc is from log_log's #caller_location, which is what the API funcs will provide
 		log_default_logger.use_colors,
 		log_default_logger.use_multi_line,
 		log_default_logger.show_source_loc,
 	)
 	fmt.eprint(fmt_message)
 
-	// Restore context
 	context = prev_context
 }
 
-// Log functions for each level
-log_verbose :: proc(category: Log_Category, message: string, args: ..any) {
-	log_log(.VERBOSE, category, message, ..args)
+// Log a verbose message with optional formatting arguments
+log_verbose :: proc(
+	category: Log_Category,
+	message: string,
+	args: ..any,
+	loc := #caller_location,
+) {
+	log_log(.VERBOSE, category, message, ..args, loc = loc)
 }
 
-log_debug :: proc(category: Log_Category, message: string, args: ..any) {
-	log_log(.DEBUG, category, message, ..args)
+// Log a debug message with optional formatting arguments
+log_debug :: proc(category: Log_Category, message: string, args: ..any, loc := #caller_location) {
+	log_log(.DEBUG, category, message, ..args, loc = loc)
 }
 
-log_info :: proc(category: Log_Category, message: string, args: ..any) {
-	log_log(.INFO, category, message, ..args)
+// Log an informational message with optional formatting arguments
+log_info :: proc(category: Log_Category, message: string, args: ..any, loc := #caller_location) {
+	log_log(.INFO, category, message, ..args, loc = loc)
 }
 
-log_warning :: proc(category: Log_Category, message: string, args: ..any) {
-	log_log(.WARNING, category, message, ..args)
+// Log a warning message with optional formatting arguments
+log_warning :: proc(
+	category: Log_Category,
+	message: string,
+	args: ..any,
+	loc := #caller_location,
+) {
+	log_log(.WARNING, category, message, ..args, loc = loc)
 }
 
-log_error :: proc(category: Log_Category, message: string, args: ..any) {
-	log_log(.ERROR, category, message, ..args)
+// Log an error message with optional formatting arguments
+log_error :: proc(category: Log_Category, message: string, args: ..any, loc := #caller_location) {
+	log_log(.ERROR, category, message, ..args, loc = loc)
 }
 
-log_critical :: proc(category: Log_Category, message: string, args: ..any) {
-	log_log(.CRITICAL, category, message, ..args)
+// Log a critical message with optional formatting arguments
+log_critical :: proc(
+	category: Log_Category,
+	message: string,
+	args: ..any,
+	loc := #caller_location,
+) {
+	log_log(.CRITICAL, category, message, ..args, loc = loc)
 }
 
 // Convenience functions with preset categories
-log_app :: proc(message: string, args: ..any) {
-	log_log(.INFO, .APP, message, ..args)
+// These will now also correctly pass the caller's location up to log_log
+log_app :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.INFO, .APP, message, ..args, loc = loc)
 }
 
-log_core :: proc(message: string, args: ..any) {
-	log_log(.INFO, .ENGINE, message, ..args)
+log_core :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.INFO, .ENGINE, message, ..args, loc = loc)
 }
 
-log_renderer :: proc(message: string, args: ..any) {
-	log_log(.INFO, .RENDERER, message, ..args)
+log_renderer :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.INFO, .RENDERER, message, ..args, loc = loc)
 }
 
-log_game :: proc(message: string, args: ..any) {
-	log_log(.INFO, .GAME, message, ..args)
+log_game :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.INFO, .GAME, message, ..args, loc = loc)
 }
 
 // Shorthand error loggers
-log_app_error :: proc(message: string, args: ..any) {
-	log_log(.ERROR, .APP, message, ..args)
+log_app_error :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.ERROR, .APP, message, ..args, loc = loc)
 }
 
-log_core_error :: proc(message: string, args: ..any) {
-	log_log(.ERROR, .ENGINE, message, ..args)
+log_core_error :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.ERROR, .ENGINE, message, ..args, loc = loc)
 }
 
-log_build_error :: proc(message: string, args: ..any) {
-	log_log(.ERROR, .BUILD, message, ..args)
+log_build_error :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.ERROR, .BUILD, message, ..args, loc = loc)
 }
 
-log_build_warning :: proc(message: string, args: ..any) {
-	log_log(.WARNING, .BUILD, message, ..args)
+log_build_warning :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.WARNING, .BUILD, message, ..args, loc = loc)
 }
 
 // Build logging functions
-log_build_info :: proc(message: string, args: ..any) {
-	log_log(.INFO, .BUILD, message, ..args)
+log_build_info :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.INFO, .BUILD, message, ..args, loc = loc)
 }
 
-log_build_debug :: proc(message: string, args: ..any) {
-	log_log(.DEBUG, .BUILD, message, ..args)
+log_build_debug :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.DEBUG, .BUILD, message, ..args, loc = loc)
 }
 
-log_build_warn :: proc(message: string, args: ..any) {
-	log_log(.WARNING, .BUILD, message, ..args)
+log_build_warn :: proc(message: string, args: ..any, loc := #caller_location) {
+	log_log(.WARNING, .BUILD, message, ..args, loc = loc)
 }
