@@ -59,6 +59,9 @@ editor_init :: proc() -> bool {
 	// Initialize editor state variables first
 	editor_init_state()
 
+	// Set the current directory to assets/scenes
+	editor.current_dir = "assets/scenes"
+
 	if !editor_scene_tree_init() do return false
 	if !editor_inspector_init() do return false
 	if !editor_viewport_init() do return false
@@ -399,8 +402,8 @@ render_open_dialog :: proc() {
 		// Render buttons
 		if imgui.Button("Open") {
 			if len(editor.selected_file) > 0 {
-				path := fmt.tprintf("%s/%s", editor.current_dir, editor.selected_file)
-				if scene_manager_load(path) {
+				// Just pass the filename to scene_manager_load, which will handle the path
+				if scene_manager_load(editor.selected_file) {
 					editor.scene_path = scene_manager.current_scene.path
 					editor.show_open_dialog = false
 				}

@@ -93,7 +93,6 @@ main :: proc() {
 	editor_shutdown()
 	imgui_shutdown() // Shutdown ImGui after editor
 	scene_manager_shutdown()
-	engine_shutdown()
 	time_shutdown()
 }
 

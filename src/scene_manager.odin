@@ -45,12 +45,8 @@ Scene_Data :: struct {
 }
 
 Entity_Data :: struct {
-	name:      string `json:"name"`,
-	transform: Transform_Data `json:"transform"`,
-	renderer:  Maybe(Renderer_Data) `json:"renderer,omitempty"`,
-	camera:    Maybe(Camera_Data) `json:"camera,omitempty"`,
-	light:     Maybe(Light_Data) `json:"light,omitempty"`,
-	script:    Maybe(Script_Data) `json:"script,omitempty"`,
+	name:       string `json:"name"`,
+	components: [dynamic]Component_Data `json:"components"`,
 }
 
 Transform_Data :: struct {
@@ -440,16 +436,27 @@ scene_manager_load :: proc(path: string) -> bool {
 	// Reset entity manager to ensure clean entity IDs
 	entity_manager.next_entity_id = 1
 
+	// Handle relative paths by prepending assets/scenes if needed
+	full_path := path
+	if !strings.has_prefix(path, "/") && !strings.has_prefix(path, "assets/scenes/") {
+		full_path = fmt.tprintf("assets/scenes/%s", path)
+	}
+
+	// Ensure the path has .json extension
+	if !strings.has_suffix(full_path, ".json") {
+		full_path = fmt.tprintf("%s.json", full_path)
+	}
+
 	// Check if file exists
-	if !os.exists(path) {
-		log_error(.ENGINE, "Scene file does not exist: %s", path)
+	if !os.exists(full_path) {
+		log_error(.ENGINE, "Scene file does not exist: %s", full_path)
 		return false
 	}
 
 	// Read file contents
-	data, ok := os.read_entire_file(path)
+	data, ok := os.read_entire_file(full_path)
 	if !ok {
-		log_error(.ENGINE, "Failed to read scene file: %s", path)
+		log_error(.ENGINE, "Failed to read scene file: %s", full_path)
 		return false
 	}
 	defer delete(data)
@@ -462,12 +469,12 @@ scene_manager_load :: proc(path: string) -> bool {
 	}
 
 	// Get scene name from filename
-	filename := filepath.base(path)
+	filename := filepath.base(full_path)
 	scene_name := strings.trim_suffix(filename, filepath.ext(filename))
 
 	// Initialize new scene
 	scene_manager.current_scene.name = strings.clone(scene_name)
-	scene_manager.current_scene.path = strings.clone(path)
+	scene_manager.current_scene.path = strings.clone(full_path)
 	scene_manager.current_scene.loaded = true
 	scene_manager.current_scene.dirty = false
 	scene_manager.current_scene.nodes = make(map[Entity]Node)
@@ -486,21 +493,42 @@ scene_manager_load :: proc(path: string) -> bool {
 	scene_manager.current_scene.root_id = 0
 	append(&scene_manager.current_scene.entities, 0)
 
-	// First pass: Create all entities and their basic components
-	entity_map := make(map[string]Entity) // Map to store entity names to IDs
-	defer delete(entity_map)
-
-	// Check if we have a main camera in the scene
-	has_main_camera := false
+	// Load scene entities
 	for entity_data in scene_data.entities {
-		if camera, ok := entity_data.camera.(Camera_Data); ok && camera.is_main {
-			has_main_camera = true
-			break
+		entity := ecs_create_entity()
+		if entity == 0 {
+			log_error(.ENGINE, "Failed to create entity")
+			continue
+		}
+
+		// Create node for this entity
+		node := Node {
+			id        = entity,
+			name      = strings.clone(entity_data.name),
+			parent_id = 0, // Always parent to root initially
+			children  = make([dynamic]Entity),
+			expanded  = true,
+			active    = true, // New nodes start active
+		}
+		scene_manager.current_scene.nodes[entity] = node
+		append(&scene_manager.current_scene.entities, entity)
+
+		// Add to root's children
+		if root, ok := scene_manager.current_scene.nodes[0]; ok {
+			append(&root.children, entity)
+			scene_manager.current_scene.nodes[0] = root
+		}
+
+		// Deserialize all components
+		for component_data in entity_data.components {
+			if component := deserialize_component(component_data, entity); component != nil {
+				ecs_add_component(entity, component)
+			}
 		}
 	}
 
 	// If no main camera exists, create one
-	if !has_main_camera {
+	if scene_manager_get_main_camera() == 0 {
 		camera_entity := ecs_create_entity()
 		if camera_entity == 0 {
 			log_error(.ENGINE, "Failed to create default camera entity")
@@ -560,145 +588,7 @@ scene_manager_load :: proc(path: string) -> bool {
 		}
 	}
 
-	// Load scene entities
-	for entity_data in scene_data.entities {
-		entity := ecs_create_entity()
-		if entity == 0 {
-			log_error(.ENGINE, "Failed to create entity")
-			continue
-		}
-
-		// Store entity name mapping
-		entity_map[entity_data.name] = entity
-
-		// Add transform component
-		if !ecs_create_and_add_component(entity, .TRANSFORM) {
-			log_error(.ENGINE, "Failed to add transform component to entity %d", entity)
-			ecs_destroy_entity(entity)
-			continue
-		}
-
-		// Set transform values
-		if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
-			transform := cast(^Transform_Component)transform
-			transform.position = {
-				entity_data.transform.position[0],
-				entity_data.transform.position[1],
-				entity_data.transform.position[2],
-			}
-			transform.rotation = {
-				entity_data.transform.rotation[0],
-				entity_data.transform.rotation[1],
-				entity_data.transform.rotation[2],
-			}
-			transform.scale = {
-				entity_data.transform.scale[0],
-				entity_data.transform.scale[1],
-				entity_data.transform.scale[2],
-			}
-		}
-
-		// Add renderer component if present
-		if renderer, ok := entity_data.renderer.(Renderer_Data); ok {
-			// Determine model type based on mesh path
-			model_type: Model_Type = .CUBE
-			if strings.has_suffix(renderer.mesh_path, "ambulance.glb") {
-				model_type = .AMBULANCE
-			}
-
-			if !ecs_create_and_add_component(entity, .RENDERER) {
-				log_error(.ENGINE, "Failed to add renderer component to entity %d", entity)
-				continue
-			}
-
-			if renderer_comp := ecs_get_component(entity, .RENDERER); renderer_comp != nil {
-				renderer_comp := cast(^Renderer)renderer_comp
-				renderer_comp.mesh = renderer.mesh_path
-				renderer_comp.material = renderer.material_path
-				renderer_comp.model_type = model_type
-				renderer_comp.visible = true
-			}
-		}
-
-		// Add camera component if present
-		if camera, ok := entity_data.camera.(Camera_Data); ok {
-			if !ecs_create_and_add_component(entity, .CAMERA) {
-				log_error(.ENGINE, "Failed to add camera component to entity %d", entity)
-				continue
-			}
-
-			if camera_comp := ecs_get_component(entity, .CAMERA); camera_comp != nil {
-				camera_comp := cast(^Camera)camera_comp
-				camera_comp.fov = camera.fov
-				camera_comp.near = camera.near
-				camera_comp.far = camera.far
-				camera_comp.is_main = camera.is_main
-			}
-		}
-
-		// Add light component if present
-		if light, ok := entity_data.light.(Light_Data); ok {
-			// Convert light type string to enum
-			light_type: Light_Type
-			switch light.light_type {
-			case "DIRECTIONAL":
-				light_type = .DIRECTIONAL
-			case "POINT":
-				light_type = .POINT
-			case "SPOT":
-				light_type = .SPOT
-			case:
-				light_type = .POINT
-			}
-
-			if !ecs_create_and_add_component(entity, .LIGHT) {
-				log_error(.ENGINE, "Failed to add light component to entity %d", entity)
-				continue
-			}
-
-			if light_comp := ecs_get_component(entity, .LIGHT); light_comp != nil {
-				light_comp := cast(^Light)light_comp
-				light_comp.light_type = light_type
-				light_comp.color = {light.color[0], light.color[1], light.color[2]}
-				light_comp.intensity = light.intensity
-				light_comp.range = light.range
-				light_comp.spot_angle = light.spot_angle
-			}
-		}
-
-		// Add script component if present
-		if script, ok := entity_data.script.(Script_Data); ok {
-			if !ecs_create_and_add_component(entity, .SCRIPT) {
-				log_error(.ENGINE, "Failed to add script component to entity %d", entity)
-				continue
-			}
-
-			if script_comp := ecs_get_component(entity, .SCRIPT); script_comp != nil {
-				script_comp := cast(^Script)script_comp
-				script_comp.script_name = script.script_name
-			}
-		}
-
-		// Create node for this entity
-		node := Node {
-			id        = entity,
-			name      = strings.clone(entity_data.name),
-			parent_id = 0, // Always parent to root initially
-			children  = make([dynamic]Entity),
-			expanded  = true,
-			active    = true, // New nodes start active
-		}
-		scene_manager.current_scene.nodes[entity] = node
-		append(&scene_manager.current_scene.entities, entity)
-
-		// Add to root's children
-		if root, ok := scene_manager.current_scene.nodes[0]; ok {
-			append(&root.children, entity)
-			scene_manager.current_scene.nodes[0] = root
-		}
-	}
-
-	log_info(.ENGINE, "Loaded scene: %s", path)
+	log_info(.ENGINE, "Loaded scene: %s", full_path)
 
 	// Select root node after loading
 	editor.selected_entity = 0
@@ -753,55 +643,23 @@ scene_manager_save :: proc(path: string = "") -> bool {
 
 		if node, ok := scene_manager.current_scene.nodes[entity]; ok {
 			entity_data := Entity_Data {
-				name = node.name,
+				name       = node.name,
+				components = make([dynamic]Component_Data),
 			}
 
-			// Get transform data
-			if transform := ecs_get_transform(entity); transform != nil {
-				entity_data.transform = Transform_Data {
-					position = {transform.position.x, transform.position.y, transform.position.z},
-					rotation = {transform.rotation.x, transform.rotation.y, transform.rotation.z},
-					scale    = {transform.scale.x, transform.scale.y, transform.scale.z},
+			// Get all components for this entity
+			for type in Component_Type {
+				if component := ecs_get_component(entity, type); component != nil {
+					if data := serialize_component(component); data != nil {
+						append(&entity_data.components, data)
+					}
 				}
 			}
 
-			// Get renderer data
-			if renderer := ecs_get_renderer(entity); renderer != nil {
-				entity_data.renderer = Renderer_Data {
-					mesh_path     = renderer.mesh,
-					material_path = renderer.material,
-				}
+			// Only add entities that have components
+			if len(entity_data.components) > 0 {
+				append(&scene_data.entities, entity_data)
 			}
-
-			// Get camera data
-			if camera := ecs_get_camera(entity); camera != nil {
-				entity_data.camera = Camera_Data {
-					fov     = camera.fov,
-					near    = camera.near,
-					far     = camera.far,
-					is_main = camera.is_main,
-				}
-			}
-
-			// Get light data
-			if light := ecs_get_light(entity); light != nil {
-				entity_data.light = Light_Data {
-					light_type = fmt.tprintf("%v", light.light_type),
-					color      = light.color,
-					intensity  = light.intensity,
-					range      = light.range,
-					spot_angle = light.spot_angle,
-				}
-			}
-
-			// Get script data
-			if script := ecs_get_script(entity); script != nil {
-				entity_data.script = Script_Data {
-					script_name = script.script_name,
-				}
-			}
-
-			append(&scene_data.entities, entity_data)
 		}
 	}
 
@@ -869,18 +727,10 @@ scene_manager_unload :: proc() {
 	// Clear command stacks
 	command_manager_clear()
 
-	// Destroy all entities
-	for entity in scene_manager.current_scene.entities {
-		ecs_destroy_entity(entity)
-	}
+	// First, recursively delete all nodes starting from root
+	scene_manager_delete_node(0)
 
-	// Clean up nodes
-	for _, node in scene_manager.current_scene.nodes {
-		if node.id != 0 { 	// Skip root node (id 0)
-			delete(node.name)
-		}
-		delete(node.children)
-	}
+	// Clear the scene's nodes map
 	clear(&scene_manager.current_scene.nodes)
 
 	// Clear the entities list

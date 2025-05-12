@@ -28,12 +28,23 @@ Component_Type :: enum {
 	AUDIO_SOURCE,
 }
 
+// Component data for serialization
+Component_Data :: union {
+	Transform_Component,
+	Renderer,
+	Camera,
+	Light,
+	Script,
+}
+
 // Component interface procedures
 Component_Interface :: struct {
 	init:             proc(_: ^Component, _: Entity) -> bool,
 	update:           proc(_: ^Component, _: f32),
 	render_inspector: proc(_: ^Component),
 	cleanup:          proc(_: ^Component),
+	serialize:        proc(_: ^Component) -> Component_Data,
+	deserialize:      proc(_: Component_Data, _: Entity) -> ^Component,
 }
 
 // Component registry to store component interfaces
@@ -70,6 +81,19 @@ component_system_init :: proc() {
 		cleanup = proc(component: ^Component) {
 			// Transform-specific cleanup
 		},
+		serialize = proc(component: ^Component) -> Component_Data {
+			transform := cast(^Transform_Component)component
+			return transform^
+		},
+		deserialize = proc(data: Component_Data, entity: Entity) -> ^Component {
+			transform := data.(Transform_Component)
+			return ecs_add_transform(
+				entity,
+				transform.position,
+				transform.rotation,
+				transform.scale,
+			)
+		},
 	}
 
 	// Register renderer component
@@ -93,6 +117,14 @@ component_system_init :: proc() {
 		},
 		cleanup = proc(component: ^Component) {
 			// Renderer-specific cleanup
+		},
+		serialize = proc(component: ^Component) -> Component_Data {
+			renderer := cast(^Renderer)component
+			return renderer^
+		},
+		deserialize = proc(data: Component_Data, entity: Entity) -> ^Component {
+			renderer := data.(Renderer)
+			return ecs_add_renderer(entity, renderer.mesh, renderer.material)
 		},
 	}
 
@@ -120,6 +152,14 @@ component_system_init :: proc() {
 		},
 		cleanup = proc(component: ^Component) {
 			// Camera-specific cleanup
+		},
+		serialize = proc(component: ^Component) -> Component_Data {
+			camera := cast(^Camera)component
+			return camera^
+		},
+		deserialize = proc(data: Component_Data, entity: Entity) -> ^Component {
+			camera := data.(Camera)
+			return ecs_add_camera(entity, camera.fov, camera.near, camera.far, camera.is_main)
 		},
 	}
 
@@ -149,6 +189,21 @@ component_system_init :: proc() {
 		cleanup = proc(component: ^Component) {
 			// Light-specific cleanup
 		},
+		serialize = proc(component: ^Component) -> Component_Data {
+			light := cast(^Light)component
+			return light^
+		},
+		deserialize = proc(data: Component_Data, entity: Entity) -> ^Component {
+			light := data.(Light)
+			return ecs_add_light(
+				entity,
+				light.light_type,
+				light.color,
+				light.intensity,
+				light.range,
+				light.spot_angle,
+			)
+		},
 	}
 
 	// Register script component
@@ -171,6 +226,14 @@ component_system_init :: proc() {
 		},
 		cleanup = proc(component: ^Component) {
 			// Script-specific cleanup
+		},
+		serialize = proc(component: ^Component) -> Component_Data {
+			script := cast(^Script)component
+			return script^
+		},
+		deserialize = proc(data: Component_Data, entity: Entity) -> ^Component {
+			script := data.(Script)
+			return ecs_add_script(entity, script.script_name)
 		},
 	}
 
@@ -334,4 +397,29 @@ render_component_header :: proc(
 	imgui.PopStyleColor(3)
 
 	return is_open
+}
+
+// Serialize a component
+serialize_component :: proc(component: ^Component) -> Component_Data {
+	if interface, ok := component_registry[component.type]; ok {
+		return interface.serialize(component)
+	}
+	return nil
+}
+
+// Deserialize a component
+deserialize_component :: proc(data: Component_Data, entity: Entity) -> ^Component {
+	switch v in data {
+	case Transform_Component:
+		return ecs_add_transform(entity, v.position, v.rotation, v.scale)
+	case Renderer:
+		return ecs_add_renderer(entity, v.mesh, v.material)
+	case Camera:
+		return ecs_add_camera(entity, v.fov, v.near, v.far, v.is_main)
+	case Light:
+		return ecs_add_light(entity, v.light_type, v.color, v.intensity, v.range, v.spot_angle)
+	case Script:
+		return ecs_add_script(entity, v.script_name)
+	}
+	return nil
 }
