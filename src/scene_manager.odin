@@ -14,27 +14,16 @@ import raylib "vendor:raylib"
 Scene_Manager :: struct {
 	current_scene:    Scene,
 	available_scenes: [dynamic]string,
+	initialized:      bool,
 }
 
 // Scene structure
 Scene :: struct {
 	name:     string,
 	path:     string,
-	nodes:    map[Entity]Node, // Map of entity ID to Node
-	root_id:  Entity, // The root node's entity ID (always 0)
 	entities: [dynamic]Entity,
 	loaded:   bool,
 	dirty:    bool,
-}
-
-// Node structure
-Node :: struct {
-	id:        Entity,
-	name:      string,
-	parent_id: Entity,
-	children:  [dynamic]Entity,
-	expanded:  bool, // Whether the node is expanded in the scene tree
-	active:    bool, // Whether the node is active
 }
 
 // Scene file format for JSON serialization
@@ -92,26 +81,19 @@ scene_manager_init :: proc() {
 	scene_manager.current_scene.entities = make([dynamic]Entity)
 	scene_manager.current_scene.loaded = false
 	scene_manager.current_scene.dirty = false
-	scene_manager.current_scene.nodes = make(map[Entity]Node)
-	scene_manager.current_scene.root_id = 0
 
-	// Create root node
-	root_node := Node {
-		id        = 0,
-		name      = strings.clone(fmt.tprintf("%s (Root Node)", scene_manager.current_scene.name)),
-		parent_id = 0, // Root is its own parent
-		children  = make([dynamic]Entity),
-		expanded  = true, // Root node starts expanded
-		active    = true, // Root node starts active
+	// Create root entity
+	root_entity := ecs_create_entity("Root")
+	if root_entity == 0 {
+		log_error(.ENGINE, "Failed to create root entity")
+		return
 	}
-	scene_manager.current_scene.nodes[0] = root_node
-
-	// Add root node to entities list
-	append(&scene_manager.current_scene.entities, 0)
+	append(&scene_manager.current_scene.entities, root_entity)
 
 	// Initialize the available scenes list
 	scene_manager_scan_available_scenes()
 
+	scene_manager.initialized = true
 	log_info(.ENGINE, "Scene manager initialized")
 }
 
@@ -121,12 +103,13 @@ scene_manager_shutdown :: proc() {
 
 	// Unload the current scene if loaded
 	if scene_manager.current_scene.loaded {
-		scene_manager_unload()
+		scene_manager_cleanup()
 	}
 
 	// Free resources
 	delete(scene_manager.current_scene.entities)
 	delete(scene_manager.available_scenes)
+	scene_manager.initialized = false
 }
 
 // Scan for available scenes in the assets/scenes directory
@@ -176,30 +159,26 @@ scene_manager_scan_available_scenes :: proc() {
 
 // Clean up the current scene
 scene_manager_cleanup :: proc() {
-	if !scene_manager.current_scene.loaded {
+	if !scene_manager.initialized {
 		return
 	}
 
-	// First destroy all entities
-	for entity in scene_manager.current_scene.entities {
-		ecs_destroy_entity(entity)
-	}
-	clear_dynamic_array(&scene_manager.current_scene.entities)
-
-	// Then clean up nodes
-	for id, node in scene_manager.current_scene.nodes {
-		if id != 0 { 	// Skip root node (id 0)
-			delete(node.name)
+	if scene_manager.current_scene.loaded {
+		// Destroy all entities
+		for entity in scene_manager.current_scene.entities {
+			ecs_destroy_entity(entity)
 		}
-		// Store children array for later deletion
-		if node.children != nil {
-			delete(node.children)
-		}
-	}
-	clear(&scene_manager.current_scene.nodes)
 
-	scene_manager.current_scene.loaded = false
-	scene_manager.current_scene.dirty = false
+		// Clear entities list
+		clear(&scene_manager.current_scene.entities)
+
+		// Free scene name and path
+		delete(scene_manager.current_scene.name)
+		delete(scene_manager.current_scene.path)
+
+		scene_manager.current_scene.loaded = false
+		scene_manager.current_scene.dirty = false
+	}
 }
 
 // Create a new scene
@@ -218,49 +197,33 @@ scene_manager_new :: proc(name: string) -> bool {
 	scene_manager.current_scene = Scene {
 		name     = strings.clone(name),
 		path     = "",
-		nodes    = make(map[Entity]Node),
 		entities = make([dynamic]Entity),
 		loaded   = true,
 		dirty    = true,
-		root_id  = 0,
 	}
 
-	// Create root node
-	root_node := Node {
-		id        = 0,
-		name      = strings.clone(fmt.tprintf("%s (Root Node)", name)),
-		parent_id = 0,
-		children  = make([dynamic]Entity),
-		expanded  = true,
-		active    = true, // Root node starts active
+	// Create root entity
+	root_entity := ecs_create_entity("Root")
+	if root_entity == 0 {
+		log_error(.ENGINE, "Failed to create root entity")
+		scene_manager_cleanup()
+		return false
 	}
-	scene_manager.current_scene.nodes[0] = root_node
-
-	// Add root node to entities list
-	append(&scene_manager.current_scene.entities, 0)
+	append(&scene_manager.current_scene.entities, root_entity)
 
 	// Create default camera
-	camera_entity := ecs_create_entity()
+	camera_entity := ecs_create_entity("Main Camera")
 	if camera_entity == 0 {
 		log_error(.ENGINE, "Failed to create camera entity")
 		scene_manager_cleanup()
 		return false
 	}
 
-	// Add transform component to camera
-	if !ecs_create_and_add_component(camera_entity, .TRANSFORM) {
-		log_error(.ENGINE, "Failed to add transform to camera")
-		ecs_destroy_entity(camera_entity)
-		scene_manager_cleanup()
-		return false
-	}
-
-	// Set transform values
-	if transform := ecs_get_component(camera_entity, .TRANSFORM); transform != nil {
-		transform := cast(^Transform_Component)transform
-		transform.position = {0, 5, -10}
-		transform.rotation = {0, 0, 0}
-		transform.scale = {1, 1, 1}
+	// Set transform values for camera
+	if transform := ecs_get_transform(camera_entity); transform != nil {
+		transform.position = raylib.Vector3{0, 5, -10}
+		transform.rotation = raylib.Vector3{30, 0, 0}
+		transform.scale = raylib.Vector3{1, 1, 1}
 	}
 
 	// Add camera component
@@ -280,81 +243,31 @@ scene_manager_new :: proc(name: string) -> bool {
 		camera.is_main = true
 	}
 
-	// Create a node for the camera
-	camera_node := Node {
-		id        = camera_entity,
-		name      = strings.clone("Main Camera"),
-		parent_id = 0, // Parent to root
-		children  = make([dynamic]Entity),
-		expanded  = true,
-		active    = true, // New nodes start active
-	}
-	scene_manager.current_scene.nodes[camera_entity] = camera_node
-
-	// Add camera to root's children
-	if root, ok := scene_manager.current_scene.nodes[0]; ok {
-		append_elem(&root.children, camera_entity)
-		scene_manager.current_scene.nodes[0] = root
-	}
-
-	// Add camera to scene entities
-	append_elem(&scene_manager.current_scene.entities, camera_entity)
+	// Add camera to scene
+	append(&scene_manager.current_scene.entities, camera_entity)
 
 	log_info(.ENGINE, "Created new scene: %s", name)
 	return true
 }
 
-// Create a new node in the current scene
-scene_manager_create_node :: proc(name: string, parent_id: Entity = 0) -> Entity {
+// Create a new entity in the current scene
+scene_manager_create_entity :: proc(name: string) -> Entity {
 	if !scene_manager.current_scene.loaded {
 		log_error(.ENGINE, "No scene loaded")
 		return 0
 	}
 
-	// Ensure parent exists
-	if parent_id != 0 {
-		if _, ok := scene_manager.current_scene.nodes[parent_id]; !ok {
-			log_error(.ENGINE, "Parent node %d does not exist", parent_id)
-			return 0
-		}
-	}
-
 	// Create new entity
-	entity := ecs_create_entity()
+	entity := ecs_create_entity(name)
 	if entity == 0 {
 		log_error(.ENGINE, "Failed to create entity")
 		return 0
 	}
 
-	// Create node
-	node := Node {
-		id        = entity,
-		name      = strings.clone(name),
-		parent_id = parent_id,
-		children  = make([dynamic]Entity),
-		expanded  = true,
-		active    = true, // New nodes start active
-	}
-
 	// Add to scene
-	scene_manager.current_scene.nodes[entity] = node
 	append(&scene_manager.current_scene.entities, entity)
 
-	// Add to parent's children
-	if parent_id != 0 {
-		if parent, ok := scene_manager.current_scene.nodes[parent_id]; ok {
-			append(&parent.children, entity)
-			scene_manager.current_scene.nodes[parent_id] = parent
-		}
-	} else {
-		// Add to root's children
-		if root, ok := scene_manager.current_scene.nodes[0]; ok {
-			append(&root.children, entity)
-			scene_manager.current_scene.nodes[0] = root
-		}
-	}
-
-	// Always add transform component to new nodes
+	// Always add transform component to new entities
 	if !ecs_create_and_add_component(entity, .TRANSFORM) {
 		log_error(.ENGINE, "Failed to add transform component to entity %d", entity)
 		ecs_destroy_entity(entity)
@@ -369,55 +282,26 @@ scene_manager_create_node :: proc(name: string, parent_id: Entity = 0) -> Entity
 		transform.scale = {1, 1, 1}
 	}
 
-	log_info(.ENGINE, "Created node: %s (ID: %d)", name, entity)
+	log_info(.ENGINE, "Created entity: %s (ID: %d)", name, entity)
 	return entity
 }
 
-// Delete a node and all its children
-scene_manager_delete_node :: proc(node_id: Entity) {
-	if !scene_manager.current_scene.loaded || node_id == 0 {
+// Delete an entity
+scene_manager_delete_entity :: proc(entity: Entity) {
+	if !scene_manager.current_scene.loaded || entity == 0 {
 		return
-	}
-
-	// Check if node exists
-	node, ok := scene_manager.current_scene.nodes[node_id]
-	if !ok {
-		return
-	}
-
-	// First delete all children
-	for child_id in node.children {
-		scene_manager_delete_node(child_id)
-	}
-
-	// Remove from parent's children
-	if parent, ok := scene_manager.current_scene.nodes[node.parent_id]; ok {
-		for i := 0; i < len(parent.children); i += 1 {
-			if parent.children[i] == node_id {
-				ordered_remove(&parent.children, i)
-				break
-			}
-		}
-		scene_manager.current_scene.nodes[node.parent_id] = parent
 	}
 
 	// Remove from scene
-	delete_key(&scene_manager.current_scene.nodes, node_id)
-
-	// Remove from entities list
 	for i := 0; i < len(scene_manager.current_scene.entities); i += 1 {
-		if scene_manager.current_scene.entities[i] == node_id {
+		if scene_manager.current_scene.entities[i] == entity {
 			ordered_remove(&scene_manager.current_scene.entities, i)
 			break
 		}
 	}
 
-	// Clean up node resources
-	delete(node.name)
-	delete(node.children)
-
 	// Destroy the entity
-	ecs_destroy_entity(node_id)
+	ecs_destroy_entity(entity)
 
 	scene_manager.current_scene.dirty = true
 }
@@ -430,7 +314,7 @@ scene_manager_load :: proc(path: string) -> bool {
 
 	// Unload current scene if loaded
 	if scene_manager.current_scene.loaded {
-		scene_manager_unload()
+		scene_manager_cleanup()
 	}
 
 	// Reset entity manager to ensure clean entity IDs
@@ -477,47 +361,27 @@ scene_manager_load :: proc(path: string) -> bool {
 	scene_manager.current_scene.path = strings.clone(full_path)
 	scene_manager.current_scene.loaded = true
 	scene_manager.current_scene.dirty = false
-	scene_manager.current_scene.nodes = make(map[Entity]Node)
 	scene_manager.current_scene.entities = make([dynamic]Entity)
 
-	// Create root node
-	root_node := Node {
-		id        = 0,
-		name      = strings.clone(fmt.tprintf("%s (Root Node)", scene_name)),
-		parent_id = 0,
-		children  = make([dynamic]Entity),
-		expanded  = true,
-		active    = true, // Root node starts active
+	// Create root entity
+	root_entity := ecs_create_entity("Root")
+	if root_entity == 0 {
+		log_error(.ENGINE, "Failed to create root entity")
+		scene_manager_cleanup()
+		return false
 	}
-	scene_manager.current_scene.nodes[0] = root_node
-	scene_manager.current_scene.root_id = 0
-	append(&scene_manager.current_scene.entities, 0)
+	append(&scene_manager.current_scene.entities, root_entity)
 
 	// Load scene entities
 	for entity_data in scene_data.entities {
-		entity := ecs_create_entity()
+		entity := ecs_create_entity(entity_data.name)
 		if entity == 0 {
 			log_error(.ENGINE, "Failed to create entity")
 			continue
 		}
 
-		// Create node for this entity
-		node := Node {
-			id        = entity,
-			name      = strings.clone(entity_data.name),
-			parent_id = 0, // Always parent to root initially
-			children  = make([dynamic]Entity),
-			expanded  = true,
-			active    = true, // New nodes start active
-		}
-		scene_manager.current_scene.nodes[entity] = node
+		// Add to scene
 		append(&scene_manager.current_scene.entities, entity)
-
-		// Add to root's children
-		if root, ok := scene_manager.current_scene.nodes[0]; ok {
-			append(&root.children, entity)
-			scene_manager.current_scene.nodes[0] = root
-		}
 
 		// Deserialize all components
 		for component_data in entity_data.components {
@@ -529,27 +393,18 @@ scene_manager_load :: proc(path: string) -> bool {
 
 	// If no main camera exists, create one
 	if scene_manager_get_main_camera() == 0 {
-		camera_entity := ecs_create_entity()
+		camera_entity := ecs_create_entity("Main Camera")
 		if camera_entity == 0 {
 			log_error(.ENGINE, "Failed to create default camera entity")
 			scene_manager_cleanup()
 			return false
 		}
 
-		// Add transform component to camera
-		if !ecs_create_and_add_component(camera_entity, .TRANSFORM) {
-			log_error(.ENGINE, "Failed to add transform to default camera")
-			ecs_destroy_entity(camera_entity)
-			scene_manager_cleanup()
-			return false
-		}
-
-		// Set transform values
-		if transform := ecs_get_component(camera_entity, .TRANSFORM); transform != nil {
-			transform := cast(^Transform_Component)transform
-			transform.position = {0, 5, -10}
-			transform.rotation = {0, 0, 0}
-			transform.scale = {1, 1, 1}
+		// Set transform values for camera
+		if transform := ecs_get_transform(camera_entity); transform != nil {
+			transform.position = raylib.Vector3{0, 5, -10}
+			transform.rotation = raylib.Vector3{30, 0, 0}
+			transform.scale = raylib.Vector3{1, 1, 1}
 		}
 
 		// Add camera component
@@ -569,30 +424,11 @@ scene_manager_load :: proc(path: string) -> bool {
 			camera.is_main = true
 		}
 
-		// Create a node for the camera
-		camera_node := Node {
-			id        = camera_entity,
-			name      = strings.clone("Main Camera"),
-			parent_id = 0,
-			children  = make([dynamic]Entity),
-			expanded  = true,
-			active    = true, // New nodes start active
-		}
-		scene_manager.current_scene.nodes[camera_entity] = camera_node
+		// Add camera to scene
 		append(&scene_manager.current_scene.entities, camera_entity)
-
-		// Add camera to root's children
-		if root, ok := scene_manager.current_scene.nodes[0]; ok {
-			append(&root.children, camera_entity)
-			scene_manager.current_scene.nodes[0] = root
-		}
 	}
 
 	log_info(.ENGINE, "Loaded scene: %s", full_path)
-
-	// Select root node after loading
-	editor.selected_entity = 0
-
 	return true
 }
 
@@ -638,28 +474,26 @@ scene_manager_save :: proc(path: string = "") -> bool {
 	// Convert entities to serializable format
 	for entity in scene_manager.current_scene.entities {
 		if entity == 0 {
-			continue // Skip root node
+			continue // Skip root entity
 		}
 
-		if node, ok := scene_manager.current_scene.nodes[entity]; ok {
-			entity_data := Entity_Data {
-				name       = node.name,
-				components = make([dynamic]Component_Data),
-			}
+		entity_data := Entity_Data {
+			name       = ecs_get_entity_name(entity),
+			components = make([dynamic]Component_Data),
+		}
 
-			// Get all components for this entity
-			for type in Component_Type {
-				if component := ecs_get_component(entity, type); component != nil {
-					if data := serialize_component(component); data != nil {
-						append(&entity_data.components, data)
-					}
+		// Get all components for this entity
+		for type in Component_Type {
+			if component := ecs_get_component(entity, type); component != nil {
+				if data := serialize_component(component); data != nil {
+					append(&entity_data.components, data)
 				}
 			}
+		}
 
-			// Only add entities that have components
-			if len(entity_data.components) > 0 {
-				append(&scene_data.entities, entity_data)
-			}
+		// Only add entities that have components
+		if len(entity_data.components) > 0 {
+			append(&scene_data.entities, entity_data)
 		}
 	}
 
@@ -727,12 +561,6 @@ scene_manager_unload :: proc() {
 	// Clear command stacks
 	command_manager_clear()
 
-	// First, recursively delete all nodes starting from root
-	scene_manager_delete_node(0)
-
-	// Clear the scene's nodes map
-	clear(&scene_manager.current_scene.nodes)
-
 	// Clear the entities list
 	clear(&scene_manager.current_scene.entities)
 
@@ -745,7 +573,6 @@ scene_manager_unload :: proc() {
 	scene_manager.current_scene.path = ""
 	scene_manager.current_scene.loaded = false
 	scene_manager.current_scene.dirty = false
-	scene_manager.current_scene.root_id = 0
 
 	// Reset entity manager
 	entity_manager.next_entity_id = 1
@@ -831,15 +658,17 @@ scene_manager_is_dirty :: proc() -> bool {
 
 // Create an ambulance entity with the provided mesh and texture
 scene_manager_create_ambulance_entity :: proc() -> Entity {
-	entity := ecs_create_entity()
+	entity := ecs_create_entity("Ambulance")
 
 	// Add transform component
 	transform := new(Transform_Component)
 	transform^ = Transform_Component {
-		_base = Component{type = .TRANSFORM, entity = entity, enabled = true},
-		position = {0, 0, 0},
-		rotation = {0, 0, 0},
-		scale = {1, 1, 1},
+		type     = .TRANSFORM,
+		entity   = entity,
+		enabled  = true,
+		position = raylib.Vector3{0, 0, 0},
+		rotation = raylib.Vector3{0, 0, 0},
+		scale    = raylib.Vector3{1, 1, 1},
 	}
 	ecs_add_component(entity, cast(^Component)transform)
 
@@ -872,12 +701,13 @@ scene_manager_create_ambulance_entity :: proc() -> Entity {
 	// Add renderer component with ambulance mesh and texture
 	renderer := new(Renderer)
 	renderer^ = Renderer {
-		type     = .RENDERER,
-		entity   = entity,
-		enabled  = true,
-		mesh     = "assets/meshes/ambulance.glb",
-		material = "assets/meshes/Textures/colormap.png",
-		visible  = true,
+		type          = .RENDERER,
+		entity        = entity,
+		enabled       = true,
+		visible       = true,
+		model_type    = .AMBULANCE,
+		mesh_path     = "assets/meshes/ambulance.glb",
+		material_path = "assets/meshes/Textures/colormap.png",
 	}
 	ecs_add_component(entity, cast(^Component)renderer)
 
@@ -932,13 +762,8 @@ scene_manager_update :: proc() {
 
 	// Update all entities in the scene
 	for entity in scene_manager.current_scene.entities {
-		// Skip root node (Entity 0)
+		// Skip root entity (Entity 0)
 		if entity == 0 {
-			continue
-		}
-
-		// Skip inactive nodes
-		if node, ok := scene_manager.current_scene.nodes[entity]; ok && !node.active {
 			continue
 		}
 
@@ -988,13 +813,8 @@ scene_manager_render :: proc() {
 
 	// Render all entities
 	for entity in scene_manager.current_scene.entities {
-		// Skip root node (Entity 0)
+		// Skip root entity (Entity 0)
 		if entity == 0 {
-			continue
-		}
-
-		// Skip inactive nodes
-		if node, ok := scene_manager.current_scene.nodes[entity]; ok && !node.active {
 			continue
 		}
 
@@ -1047,7 +867,7 @@ scene_manager_render :: proc() {
 
 		// Handle model type changes
 		model: ^raylib.Model
-		switch renderer.model_type {
+		#partial switch renderer.model_type {
 		case .CUBE:
 			// Create a unique key for this entity's cube
 			cube_key := fmt.tprintf("cube_%d", entity)
@@ -1063,19 +883,69 @@ scene_manager_render :: proc() {
 				model = model_ptr
 			}
 
+		case .SPHERE:
+			// Create a unique key for this entity's sphere
+			sphere_key := fmt.tprintf("sphere_%d", entity)
+
+			// Check if we need to create a new sphere
+			if model = asset_system.model_cache[sphere_key]; model == nil {
+				// Create a new sphere
+				sphere := raylib.GenMeshSphere(0.5, 32, 32)
+				model_ptr := new(raylib.Model)
+				model_ptr^ = raylib.LoadModelFromMesh(sphere)
+				model_ptr.materials[0].maps[0].color = raylib.BLUE
+				asset_system.model_cache[sphere_key] = model_ptr
+				model = model_ptr
+			}
+
+		case .PLANE:
+			// Create a unique key for this entity's plane
+			plane_key := fmt.tprintf("plane_%d", entity)
+
+			// Check if we need to create a new plane
+			if model = asset_system.model_cache[plane_key]; model == nil {
+				// Create a new plane
+				plane := raylib.GenMeshPlane(1.0, 1.0, 1, 1)
+				model_ptr := new(raylib.Model)
+				model_ptr^ = raylib.LoadModelFromMesh(plane)
+				model_ptr.materials[0].maps[0].color = raylib.GREEN
+				asset_system.model_cache[plane_key] = model_ptr
+				model = model_ptr
+			}
+
 		case .AMBULANCE:
 			// Load ambulance model if not in cache
-			if model = asset_system.model_cache[renderer.mesh]; model == nil {
-				model = load_model(renderer.mesh)
+			if model = asset_system.model_cache[renderer.mesh_path]; model == nil {
+				model = load_model(renderer.mesh_path)
 				if model != nil {
 					// Load and apply texture
-					texture := load_texture(renderer.material)
+					texture := load_texture(renderer.material_path)
 					if texture.id != 0 {
 						for i in 0 ..< model.materialCount {
 							material := &model.materials[i]
 							material.maps[0].texture = texture
 							material.maps[0].color = raylib.WHITE
 							material.maps[0].value = 1.0
+						}
+					}
+				}
+			}
+
+		case .CUSTOM:
+			// Load custom model if not in cache
+			if model = asset_system.model_cache[renderer.mesh_path]; model == nil {
+				model = load_model(renderer.mesh_path)
+				if model != nil {
+					// Load and apply material
+					if renderer.material_path != "" {
+						texture := load_texture(renderer.material_path)
+						if texture.id != 0 {
+							for i in 0 ..< model.materialCount {
+								material := &model.materials[i]
+								material.maps[0].texture = texture
+								material.maps[0].color = raylib.WHITE
+								material.maps[0].value = 1.0
+							}
 						}
 					}
 				}
@@ -1098,145 +968,168 @@ scene_manager_render :: proc() {
 	}
 }
 
-// Duplicate a node and its children
-scene_manager_duplicate_node :: proc(node_id: Entity) -> Entity {
+// Duplicate an entity
+scene_manager_duplicate_entity :: proc(entity: Entity) -> Entity {
 	if !scene_manager.current_scene.loaded {
 		return 0
 	}
 
-	// Get the node to duplicate
-	if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
-		// Create a new entity
-		new_entity := ecs_create_entity()
-		if new_entity == 0 {
+	// Get the entity name
+	name := ecs_get_entity_name(entity)
+	if name == "" {
+		name = fmt.tprintf("Entity_%d", entity)
+	}
+
+	// Create a new entity
+	new_entity := ecs_create_entity(fmt.tprintf("%s (Copy)", name))
+	if new_entity == 0 {
+		return 0
+	}
+
+	// Copy all components from the original entity
+	if transform := ecs_get_transform(entity); transform != nil {
+		if !ecs_create_and_add_component(new_entity, .TRANSFORM) {
+			log_error(.ENGINE, "Failed to add transform component to duplicated entity")
+			ecs_destroy_entity(new_entity)
 			return 0
 		}
 
-		// Copy all components from the original entity
-		if transform := ecs_get_transform(node_id); transform != nil {
-			if !ecs_create_and_add_component(new_entity, .TRANSFORM) {
-				log_error(.ENGINE, "Failed to add transform component to duplicated entity")
-				ecs_destroy_entity(new_entity)
-				return 0
-			}
-
-			if new_transform := ecs_get_component(new_entity, .TRANSFORM); new_transform != nil {
-				new_transform := cast(^Transform_Component)new_transform
-				new_transform^ = transform^
-			}
+		if new_transform := ecs_get_component(new_entity, .TRANSFORM); new_transform != nil {
+			new_transform := cast(^Transform_Component)new_transform
+			new_transform^ = transform^
 		}
-
-		if renderer := ecs_get_renderer(node_id); renderer != nil {
-			if !ecs_create_and_add_component(new_entity, .RENDERER) {
-				log_error(.ENGINE, "Failed to add renderer component to duplicated entity")
-				ecs_destroy_entity(new_entity)
-				return 0
-			}
-
-			if new_renderer := ecs_get_component(new_entity, .RENDERER); new_renderer != nil {
-				new_renderer := cast(^Renderer)new_renderer
-				new_renderer^ = renderer^
-			}
-		}
-
-		if camera := ecs_get_camera(node_id); camera != nil {
-			if !ecs_create_and_add_component(new_entity, .CAMERA) {
-				log_error(.ENGINE, "Failed to add camera component to duplicated entity")
-				ecs_destroy_entity(new_entity)
-				return 0
-			}
-
-			if new_camera := ecs_get_component(new_entity, .CAMERA); new_camera != nil {
-				new_camera := cast(^Camera)new_camera
-				new_camera^ = camera^
-				new_camera.is_main = false // Ensure only one main camera
-			}
-		}
-
-		if light := ecs_get_light(node_id); light != nil {
-			if !ecs_create_and_add_component(new_entity, .LIGHT) {
-				log_error(.ENGINE, "Failed to add light component to duplicated entity")
-				ecs_destroy_entity(new_entity)
-				return 0
-			}
-
-			if new_light := ecs_get_component(new_entity, .LIGHT); new_light != nil {
-				new_light := cast(^Light)new_light
-				new_light^ = light^
-			}
-		}
-
-		if script := ecs_get_script(node_id); script != nil {
-			if !ecs_create_and_add_component(new_entity, .SCRIPT) {
-				log_error(.ENGINE, "Failed to add script component to duplicated entity")
-				ecs_destroy_entity(new_entity)
-				return 0
-			}
-
-			if new_script := ecs_get_component(new_entity, .SCRIPT); new_script != nil {
-				new_script := cast(^Script)new_script
-				new_script^ = script^
-			}
-		}
-
-		// Create a new node with a unique name
-		new_name := fmt.tprintf("%s (Copy)", node.name)
-		new_node := Node {
-			id        = new_entity,
-			name      = strings.clone(new_name),
-			parent_id = node.parent_id,
-			children  = make([dynamic]Entity),
-			expanded  = node.expanded,
-			active    = true, // New nodes start active
-		}
-
-		// Add the new node to the scene
-		scene_manager.current_scene.nodes[new_entity] = new_node
-		append(&scene_manager.current_scene.entities, new_entity)
-
-		// Add the new node as a child of the original node's parent
-		if parent, ok := scene_manager.current_scene.nodes[node.parent_id]; ok {
-			append(&parent.children, new_entity)
-			scene_manager.current_scene.nodes[node.parent_id] = parent
-		}
-
-		// Recursively duplicate children
-		for child_id in node.children {
-			if new_child_id := scene_manager_duplicate_node(child_id); new_child_id != 0 {
-				// Update the new child's parent to be the new node
-				if child, ok := scene_manager.current_scene.nodes[new_child_id]; ok {
-					child.parent_id = new_entity
-					scene_manager.current_scene.nodes[new_child_id] = child
-					append(&new_node.children, new_child_id)
-				}
-			}
-		}
-
-		scene_manager.current_scene.nodes[new_entity] = new_node
-		scene_manager.current_scene.dirty = true
-
-		return new_entity
 	}
 
-	return 0
+	if renderer := ecs_get_renderer(entity); renderer != nil {
+		if !ecs_create_and_add_component(new_entity, .RENDERER) {
+			log_error(.ENGINE, "Failed to add renderer component to duplicated entity")
+			ecs_destroy_entity(new_entity)
+			return 0
+		}
+
+		if new_renderer := ecs_get_component(new_entity, .RENDERER); new_renderer != nil {
+			new_renderer := cast(^Renderer)new_renderer
+			new_renderer^ = renderer^
+		}
+	}
+
+	if camera := ecs_get_camera(entity); camera != nil {
+		if !ecs_create_and_add_component(new_entity, .CAMERA) {
+			log_error(.ENGINE, "Failed to add camera component to duplicated entity")
+			ecs_destroy_entity(new_entity)
+			return 0
+		}
+
+		if new_camera := ecs_get_component(new_entity, .CAMERA); new_camera != nil {
+			new_camera := cast(^Camera)new_camera
+			new_camera^ = camera^
+			new_camera.is_main = false // Ensure only one main camera
+		}
+	}
+
+	if light := ecs_get_light(entity); light != nil {
+		if !ecs_create_and_add_component(new_entity, .LIGHT) {
+			log_error(.ENGINE, "Failed to add light component to duplicated entity")
+			ecs_destroy_entity(new_entity)
+			return 0
+		}
+
+		if new_light := ecs_get_component(new_entity, .LIGHT); new_light != nil {
+			new_light := cast(^Light)new_light
+			new_light^ = light^
+		}
+	}
+
+	if script := ecs_get_script(entity); script != nil {
+		if !ecs_create_and_add_component(new_entity, .SCRIPT) {
+			log_error(.ENGINE, "Failed to add script component to duplicated entity")
+			ecs_destroy_entity(new_entity)
+			return 0
+		}
+
+		if new_script := ecs_get_component(new_entity, .SCRIPT); new_script != nil {
+			new_script := cast(^Script)new_script
+			new_script^ = script^
+		}
+	}
+
+	// Add the new entity to the scene
+	append(&scene_manager.current_scene.entities, new_entity)
+	scene_manager.current_scene.dirty = true
+
+	return new_entity
 }
 
-// Update a node's active state and propagate to children
-scene_manager_set_node_active :: proc(node_id: Entity, active: bool) {
+// Set an entity's active state
+scene_manager_set_entity_active :: proc(entity: Entity, active: bool) {
 	if !scene_manager.current_scene.loaded {
 		return
 	}
 
-	if node, ok := scene_manager.current_scene.nodes[node_id]; ok {
-		// Update this node's active state
-		node.active = active
-		scene_manager.current_scene.nodes[node_id] = node
-
-		// Propagate to all children
-		for child_id in node.children {
-			scene_manager_set_node_active(child_id, active)
+	// Update entity's active state in the ECS
+	if components := ecs_get_components(entity); components != nil {
+		for component in components {
+			component.enabled = active
 		}
-
-		scene_manager.current_scene.dirty = true
 	}
+
+	scene_manager.current_scene.dirty = true
+}
+
+// ECS functions
+ecs_get_transform :: proc(entity: Entity) -> ^Transform_Component {
+	if transform, ok := entity_manager.transforms[entity]; ok {
+		result := new(Transform_Component)
+		result^ = transform
+		return result
+	}
+	return nil
+}
+
+ecs_get_camera :: proc(entity: Entity) -> ^Camera {
+	if camera, ok := entity_manager.cameras[entity]; ok {
+		result := new(Camera)
+		result^ = camera
+		return result
+	}
+	return nil
+}
+
+ecs_get_renderer :: proc(entity: Entity) -> ^Renderer {
+	if renderer, ok := entity_manager.renderers[entity]; ok {
+		result := new(Renderer)
+		result^ = renderer
+		return result
+	}
+	return nil
+}
+
+ecs_get_light :: proc(entity: Entity) -> ^Light {
+	if light, ok := entity_manager.lights[entity]; ok {
+		result := new(Light)
+		result^ = light
+		return result
+	}
+	return nil
+}
+
+ecs_get_script :: proc(entity: Entity) -> ^Script {
+	if script, ok := entity_manager.scripts[entity]; ok {
+		result := new(Script)
+		result^ = script
+		return result
+	}
+	return nil
+}
+
+// Get world transform for an entity
+get_world_transform :: proc(entity: Entity) -> (raylib.Vector3, raylib.Vector3, raylib.Vector3) {
+	transform := ecs_get_transform(entity)
+	if transform == nil {
+		return raylib.Vector3{0, 0, 0}, raylib.Vector3{0, 0, 0}, raylib.Vector3{1, 1, 1}
+	}
+
+	// For now, just return local transform
+	// TODO: Implement proper world transform calculation using parent transforms
+	return transform.position, transform.rotation, transform.scale
 }

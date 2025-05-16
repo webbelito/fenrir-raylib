@@ -1,41 +1,11 @@
 package main
 
 import imgui "../vendor/odin-imgui"
+import "base:runtime"
 import "core:fmt"
 import "core:log"
 import "core:strings"
 import raylib "vendor:raylib"
-
-// Entity is just an ID
-Entity :: distinct u64
-
-// Component base type
-Component :: struct {
-	type:    Component_Type,
-	entity:  Entity,
-	enabled: bool,
-}
-
-// Component types
-Component_Type :: enum {
-	TRANSFORM,
-	RENDERER,
-	CAMERA,
-	LIGHT,
-	SCRIPT,
-	COLLIDER,
-	RIGIDBODY,
-	AUDIO_SOURCE,
-}
-
-// Component data for serialization
-Component_Data :: union {
-	Transform_Component,
-	Renderer,
-	Camera,
-	Light,
-	Script,
-}
 
 // Component interface procedures
 Component_Interface :: struct {
@@ -49,6 +19,109 @@ Component_Interface :: struct {
 
 // Component registry to store component interfaces
 component_registry: map[Component_Type]Component_Interface
+
+// Component inspector functions
+transform_render_inspector :: proc(transform: ^Transform_Component) {
+	if transform == nil do return
+	if imgui.CollapsingHeader("Transform") {
+		pos := [3]f32{transform.position.x, transform.position.y, transform.position.z}
+		rot := [3]f32{transform.rotation.x, transform.rotation.y, transform.rotation.z}
+		scale := [3]f32{transform.scale.x, transform.scale.y, transform.scale.z}
+		if imgui.DragFloat3("Position", &pos, 0.1) {
+			transform.position = {pos[0], pos[1], pos[2]}
+			transform.dirty = true
+		}
+		if imgui.DragFloat3("Rotation", &rot, 1.0) {
+			transform.rotation = {rot[0], rot[1], rot[2]}
+			transform.dirty = true
+		}
+		if imgui.DragFloat3("Scale", &scale, 0.1) {
+			transform.scale = {scale[0], scale[1], scale[2]}
+			transform.dirty = true
+		}
+	}
+}
+
+renderer_render_inspector :: proc(renderer: ^Renderer) {
+	if renderer == nil do return
+	if imgui.CollapsingHeader("Renderer") {
+		imgui.Checkbox("Visible", &renderer.visible)
+		if imgui.BeginCombo("Model Type", renderer.model_type == .CUBE ? "Cube" : "Custom") {
+			if imgui.Selectable("Cube", renderer.model_type == .CUBE) {
+				renderer.model_type = .CUBE
+				renderer.mesh_path = "cube"
+				renderer.material_path = "default"
+			}
+			if imgui.Selectable("Custom", renderer.model_type == .CUSTOM) {
+				renderer.model_type = .CUSTOM
+			}
+			imgui.EndCombo()
+		}
+		if renderer.model_type == .CUSTOM {
+			mesh_buf: [256]u8
+			material_buf: [256]u8
+			copy(mesh_buf[:], renderer.mesh_path)
+			copy(material_buf[:], renderer.material_path)
+			if imgui.InputText("Mesh Path", cstring(raw_data(mesh_buf[:])), len(mesh_buf)) {
+				renderer.mesh_path = string(mesh_buf[:])
+			}
+			if imgui.InputText(
+				"Material Path",
+				cstring(raw_data(material_buf[:])),
+				len(material_buf),
+			) {
+				renderer.material_path = string(material_buf[:])
+			}
+		}
+	}
+}
+
+camera_render_inspector :: proc(camera: ^Camera) {
+	if camera == nil do return
+	if imgui.CollapsingHeader("Camera") {
+		imgui.DragFloat("FOV", &camera.fov, 1.0, 1.0, 179.0)
+		imgui.DragFloat("Near", &camera.near, 0.1, 0.1, 100.0)
+		imgui.DragFloat("Far", &camera.far, 1.0, 1.0, 10000.0)
+		imgui.Checkbox("Is Main Camera", &camera.is_main)
+	}
+}
+
+light_render_inspector :: proc(light: ^Light) {
+	if light == nil do return
+	if imgui.CollapsingHeader("Light") {
+		if imgui.BeginCombo(
+			"Light Type",
+			light.light_type == .DIRECTIONAL ? "Directional" : "Point",
+		) {
+			if imgui.Selectable("Directional", light.light_type == .DIRECTIONAL) {
+				light.light_type = .DIRECTIONAL
+			}
+			if imgui.Selectable("Point", light.light_type == .POINT) {
+				light.light_type = .POINT
+			}
+			imgui.EndCombo()
+		}
+		color := [3]f32{light.color.x, light.color.y, light.color.z}
+		if imgui.ColorEdit3("Color", &color) {
+			light.color = {color[0], color[1], color[2]}
+		}
+		imgui.DragFloat("Intensity", &light.intensity, 0.1, 0.0, 10.0)
+		if light.light_type == .POINT {
+			imgui.DragFloat("Range", &light.range, 0.1, 0.0, 100.0)
+		}
+	}
+}
+
+script_render_inspector :: proc(script: ^Script) {
+	if script == nil do return
+	if imgui.CollapsingHeader("Script") {
+		script_buf: [256]u8
+		copy(script_buf[:], script.script_name)
+		if imgui.InputText("Script Name", cstring(raw_data(script_buf[:])), len(script_buf)) {
+			script.script_name = string(script_buf[:])
+		}
+	}
+}
 
 // Initialize the component system
 component_system_init :: proc() {
@@ -68,18 +141,32 @@ component_system_init :: proc() {
 			transform.position = {0, 0, 0}
 			transform.rotation = {0, 0, 0}
 			transform.scale = {1, 1, 1}
+			transform.local_matrix = raylib.Matrix(1)
+			transform.world_matrix = raylib.Matrix(1)
+			transform.dirty = true
 			return true
 		},
 		update = proc(component: ^Component, delta_time: f32) {
-			// Transform-specific update logic
+			transform := cast(^Transform_Component)component
+			if transform == nil do return
+			// Update transform matrices
+			transform.local_matrix =
+				raylib.MatrixScale(transform.scale.x, transform.scale.y, transform.scale.z) *
+				raylib.MatrixRotateXYZ(transform.rotation * raylib.DEG2RAD) *
+				raylib.MatrixTranslate(
+					transform.position.x,
+					transform.position.y,
+					transform.position.z,
+				)
+			transform.world_matrix = transform.local_matrix
+			transform.dirty = false
 		},
 		render_inspector = proc(component: ^Component) {
 			transform := cast(^Transform_Component)component
-			if transform == nil do return
-			// Transform-specific inspector rendering
+			transform_render_inspector(transform)
 		},
 		cleanup = proc(component: ^Component) {
-			// Transform-specific cleanup
+			// No cleanup needed for transform
 		},
 		serialize = proc(component: ^Component) -> Component_Data {
 			transform := cast(^Transform_Component)component
@@ -105,6 +192,9 @@ component_system_init :: proc() {
 			renderer.entity = entity
 			renderer.enabled = true
 			renderer.visible = true
+			renderer.model_type = .CUBE
+			renderer.mesh_path = ""
+			renderer.material_path = ""
 			return true
 		},
 		update = proc(component: ^Component, delta_time: f32) {
@@ -112,8 +202,7 @@ component_system_init :: proc() {
 		},
 		render_inspector = proc(component: ^Component) {
 			renderer := cast(^Renderer)component
-			if renderer == nil do return
-			// Renderer-specific inspector rendering
+			renderer_render_inspector(renderer)
 		},
 		cleanup = proc(component: ^Component) {
 			// Renderer-specific cleanup
@@ -124,7 +213,7 @@ component_system_init :: proc() {
 		},
 		deserialize = proc(data: Component_Data, entity: Entity) -> ^Component {
 			renderer := data.(Renderer)
-			return ecs_add_renderer(entity, renderer.mesh, renderer.material)
+			return ecs_add_renderer(entity)
 		},
 	}
 
@@ -147,8 +236,7 @@ component_system_init :: proc() {
 		},
 		render_inspector = proc(component: ^Component) {
 			camera := cast(^Camera)component
-			if camera == nil do return
-			// Camera-specific inspector rendering
+			camera_render_inspector(camera)
 		},
 		cleanup = proc(component: ^Component) {
 			// Camera-specific cleanup
@@ -171,7 +259,7 @@ component_system_init :: proc() {
 			light.type = .LIGHT
 			light.entity = entity
 			light.enabled = true
-			light.light_type = .POINT
+			light.light_type = .DIRECTIONAL
 			light.color = {1, 1, 1}
 			light.intensity = 1.0
 			light.range = 10.0
@@ -183,8 +271,7 @@ component_system_init :: proc() {
 		},
 		render_inspector = proc(component: ^Component) {
 			light := cast(^Light)component
-			if light == nil do return
-			// Light-specific inspector rendering
+			light_render_inspector(light)
 		},
 		cleanup = proc(component: ^Component) {
 			// Light-specific cleanup
@@ -195,14 +282,7 @@ component_system_init :: proc() {
 		},
 		deserialize = proc(data: Component_Data, entity: Entity) -> ^Component {
 			light := data.(Light)
-			return ecs_add_light(
-				entity,
-				light.light_type,
-				light.color,
-				light.intensity,
-				light.range,
-				light.spot_angle,
-			)
+			return ecs_add_light(entity, light.light_type)
 		},
 	}
 
@@ -214,6 +294,7 @@ component_system_init :: proc() {
 			script.type = .SCRIPT
 			script.entity = entity
 			script.enabled = true
+			script.script_name = ""
 			return true
 		},
 		update = proc(component: ^Component, delta_time: f32) {
@@ -221,8 +302,7 @@ component_system_init :: proc() {
 		},
 		render_inspector = proc(component: ^Component) {
 			script := cast(^Script)component
-			if script == nil do return
-			// Script-specific inspector rendering
+			script_render_inspector(script)
 		},
 		cleanup = proc(component: ^Component) {
 			// Script-specific cleanup
@@ -249,77 +329,40 @@ component_system_shutdown :: proc() {
 // Create a new component of the specified type
 create_component :: proc(type: Component_Type, entity: Entity) -> ^Component {
 	if interface, ok := component_registry[type]; ok {
-		#partial switch type {
-		case .TRANSFORM:
-			component := new(Transform_Component)
-			if interface.init(cast(^Component)component, entity) {
-				return cast(^Component)component
-			}
-			free(component)
-		case .RENDERER:
-			component := new(Renderer)
-			if interface.init(cast(^Component)component, entity) {
-				return cast(^Component)component
-			}
-			free(component)
-		case .CAMERA:
-			component := new(Camera)
-			if interface.init(cast(^Component)component, entity) {
-				return cast(^Component)component
-			}
-			free(component)
-		case .LIGHT:
-			component := new(Light)
-			if interface.init(cast(^Component)component, entity) {
-				return cast(^Component)component
-			}
-			free(component)
-		case .SCRIPT:
-			component := new(Script)
-			if interface.init(cast(^Component)component, entity) {
-				return cast(^Component)component
-			}
-			free(component)
-		case:
-			log_error(.ENGINE, "Unknown component type: %v", type)
+		component := new(Component)
+		if interface.init(component, entity) {
+			return component
 		}
+		free(component)
 	}
 	return nil
 }
 
 // Add a component to an entity
-ecs_add_component :: proc(entity: Entity, component: ^Component) {
-	if component == nil do return
+ecs_add_component :: proc(entity: Entity, component: ^Component) -> bool {
+	if entity == 0 || component == nil do return false
 
 	#partial switch component.type {
 	case .TRANSFORM:
 		transform := cast(^Transform_Component)component
-		if transform != nil {
-			entity_manager.transforms[entity] = transform^
-		}
+		entity_manager.transforms[entity] = transform^
 	case .RENDERER:
 		renderer := cast(^Renderer)component
-		if renderer != nil {
-			entity_manager.renderers[entity] = renderer^
-		}
+		entity_manager.renderers[entity] = renderer^
 	case .CAMERA:
 		camera := cast(^Camera)component
-		if camera != nil {
-			entity_manager.cameras[entity] = camera^
-		}
+		entity_manager.cameras[entity] = camera^
 	case .LIGHT:
 		light := cast(^Light)component
-		if light != nil {
-			entity_manager.lights[entity] = light^
-		}
+		entity_manager.lights[entity] = light^
 	case .SCRIPT:
 		script := cast(^Script)component
-		if script != nil {
-			entity_manager.scripts[entity] = script^
-		}
+		entity_manager.scripts[entity] = script^
 	case:
-	// Unknown component type
+		return false
 	}
+
+	return true
 }
 
 // Update a component
@@ -345,10 +388,8 @@ cleanup_component :: proc(component: ^Component) {
 }
 
 // Remove a component from an entity
-ecs_remove_component :: proc(entity: Entity, type: Component_Type) {
-	if !ecs_has_component(entity, type) {
-		return
-	}
+ecs_remove_component :: proc(entity: Entity, type: Component_Type) -> bool {
+	if entity == 0 do return false
 
 	#partial switch type {
 	case .TRANSFORM:
@@ -361,7 +402,11 @@ ecs_remove_component :: proc(entity: Entity, type: Component_Type) {
 		delete_key(&entity_manager.lights, entity)
 	case .SCRIPT:
 		delete_key(&entity_manager.scripts, entity)
+	case:
+		return false
 	}
+
+	return true
 }
 
 // Render a generic component header with remove button
@@ -413,13 +458,70 @@ deserialize_component :: proc(data: Component_Data, entity: Entity) -> ^Componen
 	case Transform_Component:
 		return ecs_add_transform(entity, v.position, v.rotation, v.scale)
 	case Renderer:
-		return ecs_add_renderer(entity, v.mesh, v.material)
+		return ecs_add_renderer(entity)
 	case Camera:
 		return ecs_add_camera(entity, v.fov, v.near, v.far, v.is_main)
 	case Light:
-		return ecs_add_light(entity, v.light_type, v.color, v.intensity, v.range, v.spot_angle)
+		return ecs_add_light(entity, v.light_type)
 	case Script:
 		return ecs_add_script(entity, v.script_name)
 	}
 	return nil
+}
+
+// Update all components of a specific type
+ecs_update_components :: proc(type: Component_Type, delta_time: f32) {
+	if interface, ok := component_registry[type]; ok {
+		for entity in ecs_get_entities_with_component(type) {
+			if component := ecs_get_component(entity, type); component != nil {
+				interface.update(component, delta_time)
+			}
+		}
+	}
+}
+
+// Render inspector for all components of a specific type
+ecs_render_component_inspectors :: proc(type: Component_Type) {
+	if interface, ok := component_registry[type]; ok {
+		for entity in ecs_get_entities_with_component(type) {
+			if component := ecs_get_component(entity, type); component != nil {
+				interface.render_inspector(component)
+			}
+		}
+	}
+}
+
+// Cleanup all components of a specific type
+ecs_cleanup_components :: proc(type: Component_Type) {
+	if interface, ok := component_registry[type]; ok {
+		for entity in ecs_get_entities_with_component(type) {
+			if component := ecs_get_component(entity, type); component != nil {
+				interface.cleanup(component)
+			}
+		}
+	}
+}
+
+// Serialize all components of a specific type
+ecs_serialize_components :: proc(type: Component_Type) -> []Component_Data {
+	data: [dynamic]Component_Data
+	if interface, ok := component_registry[type]; ok {
+		for entity in ecs_get_entities_with_component(type) {
+			if component := ecs_get_component(entity, type); component != nil {
+				append(&data, interface.serialize(component))
+			}
+		}
+	}
+	return data[:]
+}
+
+// Deserialize components of a specific type
+ecs_deserialize_components :: proc(type: Component_Type, data: []Component_Data) {
+	if interface, ok := component_registry[type]; ok {
+		for d in data {
+			if component := interface.deserialize(d, 0); component != nil {
+				// TODO: Handle entity creation/assignment
+			}
+		}
+	}
 }

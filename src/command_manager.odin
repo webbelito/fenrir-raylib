@@ -198,3 +198,20 @@ command_manager_clear :: proc() {
 	clear(&command_manager.undo_stack)
 	clear(&command_manager.redo_stack)
 }
+
+// Get the name of a command
+get_command_name :: proc(cmd: ^Command) -> string {
+	if cmd == nil do return "Unknown"
+
+	if cmd.vtable == &entity_add_vtable {
+		return "Add Entity"
+	} else if cmd.vtable == &entity_delete_vtable {
+		return "Delete Entity"
+	} else if cmd.vtable == &entity_rename_vtable {
+		return "Rename Entity"
+	} else if cmd.vtable == &create_entity_vtable {
+		return "Create Entity"
+	}
+
+	return "Unknown Command"
+}

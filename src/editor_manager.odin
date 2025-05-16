@@ -13,12 +13,9 @@ import raylib "vendor:raylib"
 Editor_State :: struct {
 	initialized:         bool,
 	selected_entity:     Entity,
-	scene_tree_open:     bool,
 	inspector_open:      bool,
-	viewport_open:       bool,
-	console_open:        bool,
-	scene_tree_width:    f32,
 	inspector_width:     f32,
+	scene_tree_width:    f32,
 	menu_height:         f32,
 	scene_path:          string,
 	show_save_dialog:    bool,
@@ -34,19 +31,24 @@ Editor_State :: struct {
 	pending_action:      string,
 }
 
+// Global editor state
 editor: Editor_State
 
 // Initialize the editor state (called once)
 editor_init_state :: proc() {
-	editor.initialized = false
-	editor.viewport_open = true // Default viewport to open
-	editor.console_open = true // Default console to open
-	editor.scene_tree_open = true
-	editor.inspector_open = true
-	editor.scene_tree_width = 200.0
-	editor.inspector_width = 200.0
-	editor.menu_height = 30.0
-	editor.selected_entity = 0
+	editor = Editor_State {
+		initialized         = false,
+		selected_entity     = 0,
+		inspector_open      = true,
+		inspector_width     = 300.0,
+		scene_tree_width    = 300.0,
+		menu_height         = 30.0,
+		scene_path          = "",
+		show_save_dialog    = false,
+		show_open_dialog    = false,
+		show_unsaved_dialog = false,
+		pending_action      = "",
+	}
 }
 
 // Initialize the editor
@@ -54,21 +56,14 @@ editor_init :: proc() -> bool {
 	if editor.initialized {
 		return true
 	}
-	log_info(.EDITOR, "Initializing editor")
 
-	// Initialize editor state variables first
+	// Initialize editor state
 	editor_init_state()
 
-	// Set the current directory to assets/scenes
-	editor.current_dir = "assets/scenes"
-
-	if !editor_scene_tree_init() do return false
-	if !editor_inspector_init() do return false
-	if !editor_viewport_init() do return false
-	if !editor_console_init() do return false // Initialize console
-
+	// Set initialized flag
 	editor.initialized = true
-	log_info(.EDITOR, "Editor initialized")
+
+	log_info(.ENGINE, "Editor initialized")
 	return true
 }
 
@@ -77,49 +72,161 @@ editor_shutdown :: proc() {
 	if !editor.initialized {
 		return
 	}
-	log_info(.EDITOR, "Shutting down editor")
-
-	editor_scene_tree_shutdown()
-	editor_inspector_shutdown()
-	editor_viewport_shutdown()
-	editor_console_shutdown() // Shutdown console
 
 	editor.initialized = false
-	log_info(.EDITOR, "Editor shut down")
+	log_info(.ENGINE, "Editor shut down")
 }
 
 // Update the editor
 editor_update :: proc() {
-	if !editor.initialized {
+	if !editor.initialized || engine.playing {
 		return
 	}
 
-	editor_scene_tree_update()
+	// Update editor systems
 	editor_inspector_update()
-	// editor_viewport_update() // Viewport has no separate update currently
-	// editor_console_update() // Console has no separate update currently
 }
 
-// Render the editor UI elements
+// Draw the 3D scene in the background
+draw_3d_scene :: proc(x, y, width, height: i32) {
+	// Set up the viewport
+	raylib.BeginMode3D(engine.editor_camera)
+	defer raylib.EndMode3D()
+
+	// Draw a grid
+	raylib.DrawGrid(10, 1.0)
+
+	// Draw all entities with renderers
+	for entity in scene_manager.current_scene.entities {
+		if renderer := ecs_get_component(entity, .RENDERER); renderer != nil {
+			if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
+				transform := cast(^Transform_Component)transform
+				renderer := cast(^Renderer)renderer
+
+				// Draw based on model type
+				switch renderer.model_type {
+				case .CUBE:
+					raylib.DrawCube(transform.position, 1.0, 1.0, 1.0, raylib.WHITE)
+				case .SPHERE:
+					raylib.DrawSphere(transform.position, 0.5, raylib.WHITE)
+				case .PLANE:
+					raylib.DrawPlane(transform.position, {1.0, 1.0}, raylib.WHITE)
+				case .AMBULANCE, .CUSTOM:
+					if model, ok := asset_manager.models[renderer.mesh_path]; ok {
+						raylib.DrawModel(model.model, transform.position, 1.0, raylib.WHITE)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Render the editor
 editor_render :: proc() {
-	if !editor.initialized {
+	if !editor.initialized || engine.playing {
 		return
 	}
 
-	editor_menu_render()
-	editor_layout_render() // Renders Scene Tree and Inspector
+	// Draw the 3D scene in full screen first
+	draw_3d_scene(0, 0, raylib.GetScreenWidth(), raylib.GetScreenHeight())
 
-	// Viewport UI (its 3D scene is drawn by engine_render)
-	if editor.viewport_open {
-		editor_viewport_render_ui()
+	// Create the menu bar
+	if imgui.BeginMainMenuBar() {
+		if imgui.BeginMenu("File") {
+			if imgui.MenuItem("New Scene") {
+				if !check_unsaved_changes("new") {
+					scene_manager_new("Untitled")
+				}
+			}
+			if imgui.MenuItem("Open Scene") {
+				if !check_unsaved_changes("open") {
+					editor.show_open_dialog = true
+				}
+			}
+			if imgui.MenuItem("Save Scene") {
+				if scene_manager_is_dirty() {
+					editor.show_save_dialog = true
+				}
+			}
+			imgui.Separator()
+			if imgui.MenuItem("Exit") {
+				if !check_unsaved_changes("exit") {
+					engine.running = false
+				}
+			}
+			imgui.EndMenu()
+		}
+		if imgui.BeginMenu("Edit") {
+			if imgui.MenuItem("Undo") {
+				command_manager_undo()
+			}
+			if imgui.MenuItem("Redo") {
+				command_manager_redo()
+			}
+			imgui.EndMenu()
+		}
+		if imgui.BeginMenu("View") {
+			if imgui.MenuItem("Toggle Inspector") {
+				editor.inspector_open = !editor.inspector_open
+			}
+			imgui.EndMenu()
+		}
+		imgui.EndMainMenuBar()
 	}
 
-	// Console UI
-	// editor_console_render_ui() // Called directly, visibility handled by its Begin call with &editor.console_open
-	// Let Begin handle visibility: 
-	editor_console_render_ui()
+	// Create a window for the scene tree (left panel)
+	imgui.SetNextWindowPos(imgui.Vec2{0, imgui.GetFrameHeight()})
+	imgui.SetNextWindowSize(
+		imgui.Vec2 {
+			editor.scene_tree_width,
+			f32(raylib.GetScreenHeight()) - imgui.GetFrameHeight(),
+		},
+	)
 
-	editor_manager_render_dialogs()
+	window_flags := imgui.WindowFlags {
+		.NoCollapse,
+		.NoResize,
+		.NoMove,
+		.NoBringToFrontOnFocus,
+		.NoNavFocus,
+	}
+
+	if imgui.Begin("Scene Tree", nil, window_flags) {
+		// Render scene tree
+		for entity in scene_manager.current_scene.entities {
+			if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
+				transform := cast(^Transform_Component)transform
+
+				// Create a selectable tree node for each entity
+				entity_name := fmt.tprintf("Entity %d", entity)
+				if imgui.Selectable(
+					strings.clone_to_cstring(entity_name),
+					editor.selected_entity == entity,
+				) {
+					editor.selected_entity = entity
+				}
+			}
+		}
+	}
+	imgui.End()
+
+	// Create a window for the inspector (right panel)
+	imgui.SetNextWindowPos(
+		imgui.Vec2{f32(raylib.GetScreenWidth()) - editor.inspector_width, imgui.GetFrameHeight()},
+	)
+	imgui.SetNextWindowSize(
+		imgui.Vec2{editor.inspector_width, f32(raylib.GetScreenHeight()) - imgui.GetFrameHeight()},
+	)
+
+	if imgui.Begin("Inspector", nil, window_flags) {
+		editor_inspector_render()
+	}
+	imgui.End()
+
+	// Render dialogs
+	render_save_dialog()
+	render_open_dialog()
+	render_unsaved_dialog()
 }
 
 // Handle editor input
@@ -128,74 +235,13 @@ editor_manager_handle_input :: proc() {
 	if imgui.IsKeyDown(.LeftCtrl) || imgui.IsKeyDown(.RightCtrl) {
 		// Save (Ctrl+S)
 		if imgui.IsKeyPressed(.S) {
-			if editor.scene_path == "" {
-				// Clear the save dialog buffer
-				for i in 0 ..< len(editor.save_dialog_name) {
-					editor.save_dialog_name[i] = 0
-				}
-				// Copy the current scene name
-				copy(editor.save_dialog_name[:], scene_manager.current_scene.name)
+			if scene_manager.current_scene.dirty {
 				editor.show_save_dialog = true
-			} else {
-				scene_manager_save(editor.scene_path)
 			}
 		}
 		// Open (Ctrl+O)
 		if imgui.IsKeyPressed(.O) {
-			if !check_unsaved_changes("open") {
-				scene_manager_scan_available_scenes()
-				editor.show_open_dialog = true
-			}
-		}
-		// New (Ctrl+N)
-		if imgui.IsKeyPressed(.N) {
-			if !check_unsaved_changes("new") {
-				scene_manager_new("Untitled")
-				editor.scene_path = ""
-			}
-		}
-		// Undo (Ctrl+Z)
-		if imgui.IsKeyPressed(.Z) {
-			command_manager_undo()
-		}
-		// Redo (Ctrl+Y)
-		if imgui.IsKeyPressed(.Y) {
-			command_manager_redo()
-		}
-		// Duplicate (Ctrl+D)
-		if imgui.IsKeyPressed(.D) && editor.selected_entity != 0 {
-			cmd := command_create_node_duplicate(editor.selected_entity)
-			command_manager_execute(&cmd)
-		}
-	}
-
-	// Scene tree shortcuts
-	if editor.selected_entity != 0 {
-		// Delete selected entity (Delete)
-		if imgui.IsKeyPressed(.Delete) {
-			if editor.selected_entity != 0 { 	// Don't allow deleting root node
-				cmd := command_create_node_delete(editor.selected_entity)
-				command_manager_execute(&cmd)
-			}
-		}
-		// Duplicate selected entity (Ctrl+D)
-		if (imgui.IsKeyDown(.LeftCtrl) || imgui.IsKeyDown(.RightCtrl)) && imgui.IsKeyPressed(.D) {
-			if new_node_id := scene_manager_duplicate_node(editor.selected_entity);
-			   new_node_id != 0 {
-				editor.selected_entity = new_node_id
-			}
-		}
-		// Rename selected entity (F2)
-		if imgui.IsKeyPressed(.F2) {
-			editor.renaming_node = editor.selected_entity
-			// Clear the buffer
-			for i in 0 ..< len(editor.rename_buffer) {
-				editor.rename_buffer[i] = 0
-			}
-			// Copy the current name
-			if node, ok := scene_manager.current_scene.nodes[editor.selected_entity]; ok {
-				copy(editor.rename_buffer[:], node.name)
-			}
+			editor.show_open_dialog = true
 		}
 	}
 }

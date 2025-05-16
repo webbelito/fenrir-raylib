@@ -4,8 +4,16 @@ import imgui_rl "../vendor/imgui_impl_raylib"
 import imgui "../vendor/odin-imgui"
 import "core:log"
 
+// Global flag to track ImGui initialization
+imgui_initialized := false
+
 // Initialize ImGui with default configuration
 imgui_init :: proc() -> bool {
+	if imgui_initialized {
+		log_warning(.ENGINE, "ImGui already initialized")
+		return true
+	}
+
 	log_info(.ENGINE, "Initializing ImGui")
 
 	// Create ImGui context
@@ -41,12 +49,17 @@ imgui_init :: proc() -> bool {
 		return false
 	}
 
+	imgui_initialized = true
 	log_info(.ENGINE, "ImGui initialized successfully")
 	return true
 }
 
 // Shutdown ImGui
 imgui_shutdown :: proc() {
+	if !imgui_initialized {
+		return
+	}
+
 	log_info(.ENGINE, "Shutting down ImGui")
 
 	// Get the current context
@@ -54,6 +67,7 @@ imgui_shutdown :: proc() {
 	if ctx != nil {
 		imgui_rl.shutdown()
 		imgui.DestroyContext(ctx)
+		imgui_initialized = false
 		log_info(.ENGINE, "ImGui shut down successfully")
 	} else {
 		log_warning(.ENGINE, "No ImGui context to shut down")

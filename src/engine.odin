@@ -31,11 +31,13 @@ Engine_Config :: struct {
 Engine_State :: struct {
 	initialized:               bool,
 	running:                   bool,
-	playing:                   bool, // Add playing state
+	playing:                   bool, // true = play mode, false = editor mode
 	time:                      Time_State,
 	config:                    Engine_Config,
-	editor_camera:             raylib.Camera3D, // Editor-specific camera
-	needs_initial_dock_layout: bool, // Added flag for initial dock layout
+	editor_camera:             raylib.Camera3D,
+	game_camera:               raylib.Camera3D,
+	needs_initial_dock_layout: bool,
+	editor_visible:            bool, // Controls if editor UI is visible
 }
 
 // Global engine state
@@ -155,6 +157,18 @@ engine_init :: proc(config: Engine_Config) -> bool {
 
 	log_info(.ENGINE, "Initializing engine")
 
+	// Initialize ImGui first
+	if !imgui_init() {
+		log_error(.ENGINE, "Failed to initialize ImGui")
+		return false
+	}
+
+	// Initialize editor
+	if !editor_init() {
+		log_error(.ENGINE, "Failed to initialize editor")
+		return false
+	}
+
 	// Initialize entity manager
 	entity_manager_init()
 
@@ -182,9 +196,19 @@ engine_init :: proc(config: Engine_Config) -> bool {
 	engine.playing = false
 	engine.config = config
 	engine.needs_initial_dock_layout = true // Initialize the flag
+	engine.editor_visible = true // Make sure editor is visible by default
 
 	// Initialize editor camera
 	engine.editor_camera = raylib.Camera3D {
+		position   = {0, 5, -10},
+		target     = {0, 0, 0},
+		up         = {0, 1, 0},
+		fovy       = 45,
+		projection = .PERSPECTIVE,
+	}
+
+	// Initialize game camera
+	engine.game_camera = raylib.Camera3D {
 		position   = {0, 5, -10},
 		target     = {0, 0, 0},
 		up         = {0, 1, 0},
@@ -236,12 +260,30 @@ engine_update :: proc() {
 	// Update time first
 	time_update()
 
-	// Begin ImGui frame (handles input, DeltaTime, etc.)
+	// Begin ImGui frame
 	imgui_begin_frame()
+
+	// Handle F1 key to toggle play/editor mode
+	if raylib.IsKeyPressed(.F1) {
+		engine.playing = !engine.playing
+		engine.editor_visible = !engine.playing
+
+		if engine.playing {
+			// Entering play mode
+			log_info(.ENGINE, "Entering play mode")
+			// Store editor camera state
+			engine.game_camera = engine.editor_camera
+		} else {
+			// Entering editor mode
+			log_info(.ENGINE, "Entering editor mode")
+			// Restore editor camera state
+			engine.editor_camera = engine.game_camera
+		}
+	}
 
 	// Handle camera movement based on mode
 	if !imgui.IsAnyItemActive() {
-		if editor.initialized {
+		if !engine.playing {
 			// Editor camera controls
 			if raylib.IsKeyDown(.W) {
 				engine.editor_camera.position += raylib.Vector3{0, 0, -0.1}
@@ -259,18 +301,52 @@ engine_update :: proc() {
 				engine.editor_camera.position += raylib.Vector3{0.1, 0, 0}
 				engine.editor_camera.target += raylib.Vector3{0.1, 0, 0}
 			}
-		} else if engine.playing {
-			// Game camera controls (example)
+			if raylib.IsKeyDown(.Q) {
+				engine.editor_camera.position += raylib.Vector3{0, 0.1, 0}
+				engine.editor_camera.target += raylib.Vector3{0, 0.1, 0}
+			}
+			if raylib.IsKeyDown(.E) {
+				engine.editor_camera.position += raylib.Vector3{0, -0.1, 0}
+				engine.editor_camera.target += raylib.Vector3{0, -0.1, 0}
+			}
+		} else {
+			// Game camera controls
+			if raylib.IsKeyDown(.W) {
+				engine.game_camera.position += raylib.Vector3{0, 0, -0.1}
+				engine.game_camera.target += raylib.Vector3{0, 0, -0.1}
+			}
+			if raylib.IsKeyDown(.S) {
+				engine.game_camera.position += raylib.Vector3{0, 0, 0.1}
+				engine.game_camera.target += raylib.Vector3{0, 0, 0.1}
+			}
+			if raylib.IsKeyDown(.A) {
+				engine.game_camera.position += raylib.Vector3{-0.1, 0, 0}
+				engine.game_camera.target += raylib.Vector3{-0.1, 0, 0}
+			}
+			if raylib.IsKeyDown(.D) {
+				engine.game_camera.position += raylib.Vector3{0.1, 0, 0}
+				engine.game_camera.target += raylib.Vector3{0.1, 0, 0}
+			}
+			if raylib.IsKeyDown(.Q) {
+				engine.game_camera.position += raylib.Vector3{0, 0.1, 0}
+				engine.game_camera.target += raylib.Vector3{0, 0.1, 0}
+			}
+			if raylib.IsKeyDown(.E) {
+				engine.game_camera.position += raylib.Vector3{0, -0.1, 0}
+				engine.game_camera.target += raylib.Vector3{0, -0.1, 0}
+			}
 		}
 	}
 
-	// Update scene logic
-	if scene_manager_is_loaded() {
-		scene_manager_update()
+	// Update game systems
+	if engine.playing {
+		// Update game systems
+		// TODO: Add game-specific update systems
 	}
 
-	// Update editor logic (panel states, etc., but not their ImGui rendering definitions yet)
-	if editor.initialized {
+	// Update editor systems
+	if !engine.playing && engine.editor_visible {
+		// Update editor systems
 		editor_update()
 	}
 }
@@ -281,126 +357,52 @@ engine_render :: proc() {
 		return
 	}
 
-	raylib.BeginDrawing() // Main window drawing context
-	{
-		raylib.ClearBackground(raylib.BLACK)
+	// Begin rendering
+	raylib.BeginDrawing()
+	raylib.ClearBackground(raylib.RAYWHITE)
 
-		// Create a full-screen window to host the dockspace and main menu
-		main_viewport_imgui := imgui.GetMainViewport()
-		imgui.SetNextWindowPos(main_viewport_imgui.WorkPos)
-		imgui.SetNextWindowSize(main_viewport_imgui.WorkSize)
-		imgui.SetNextWindowViewport(main_viewport_imgui.ID_)
+	// Begin 3D mode
+	raylib.BeginMode3D(engine.playing ? engine.game_camera : engine.editor_camera)
 
-		dockspace_host_window_flags := imgui.WindowFlags {
-			.NoDocking,
-			.NoTitleBar,
-			.NoCollapse,
-			.NoResize,
-			.NoMove,
-			.NoBringToFrontOnFocus,
-			.NoNavFocus,
-			.NoBackground,
-			.MenuBar,
-		}
+	// Draw a grid in both modes
+	raylib.DrawGrid(10, 1.0)
 
-		imgui.PushStyleVar(.WindowRounding, 0.0)
-		imgui.PushStyleVar(.WindowBorderSize, 0.0)
-		// Skipping PushStyleVar for .WindowPadding to avoid linter issue.
+	// Render game objects
+	for entity in scene_manager.current_scene.entities {
+		if renderer := ecs_get_component(entity, .RENDERER); renderer != nil {
+			if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
+				transform := cast(^Transform_Component)transform
+				renderer := cast(^Renderer)renderer
 
-		// Force DockSpace Host window background to be transparent
-		host_transparent_color_u32 := imgui.GetColorU32ImVec4(imgui.Vec4{0.0, 0.0, 0.0, 0.0})
-		imgui.PushStyleColor(imgui.Col.WindowBg, host_transparent_color_u32)
-
-		imgui.SetNextWindowBgAlpha(0.0) // Keep this as well for good measure
-		imgui.Begin("DockSpace Host", nil, dockspace_host_window_flags)
-		{
-			imgui.PopStyleVar(2)
-			dockspace_id_val := imgui.GetID("MainDockspace")
-
-			if engine.needs_initial_dock_layout {
-				imgui.DockBuilderRemoveNode(dockspace_id_val) // Clear out existing layout
-				imgui.DockBuilderAddNode(dockspace_id_val, {})
-				imgui.DockBuilderSetNodeSize(dockspace_id_val, main_viewport_imgui.WorkSize)
-
-				// Define dock IDs
-				dock_id_root := dockspace_id_val
-				dock_id_inspector: imgui.ID
-				dock_id_left_of_inspector: imgui.ID // Area to the left of the full-height inspector
-				dock_id_console: imgui.ID
-				dock_id_above_console: imgui.ID // Area above console (for scene tree & viewport)
-				dock_id_scene_tree: imgui.ID
-				dock_id_viewport: imgui.ID
-
-				// 1. Split root node for Inspector (right, full height)
-				// Inspector takes ~20% of the width from the right.
-				imgui.DockBuilderSplitNode(
-					dock_id_root,
-					imgui.Dir.Right,
-					0.20,
-					&dock_id_inspector,
-					&dock_id_left_of_inspector,
-				)
-
-				// 2. Split the area left_of_inspector for Console (bottom)
-				// Console takes ~25% of the height from the bottom of this remaining area.
-				imgui.DockBuilderSplitNode(
-					dock_id_left_of_inspector,
-					imgui.Dir.Down,
-					0.25,
-					&dock_id_console,
-					&dock_id_above_console,
-				)
-
-				// 3. Split the area above_console for Scene Tree (left) and Viewport (center/right)
-				// Scene Tree takes ~25% of the width from the left of the 'above_console' area.
-				// (0.25 of 0.8 total width = 0.2 overall width for scene tree)
-				imgui.DockBuilderSplitNode(
-					dock_id_above_console,
-					imgui.Dir.Left,
-					0.25,
-					&dock_id_scene_tree,
-					&dock_id_viewport,
-				)
-
-				// Dock windows to their respective nodes
-				imgui.DockBuilderDockWindow("Inspector", dock_id_inspector)
-				imgui.DockBuilderDockWindow("Console", dock_id_console)
-				imgui.DockBuilderDockWindow("Scene Tree", dock_id_scene_tree)
-				imgui.DockBuilderDockWindow("Viewport", dock_id_viewport)
-
-				imgui.DockBuilderFinish(dockspace_id_val)
-				engine.needs_initial_dock_layout = false
-			}
-
-			dock_size_val := imgui.Vec2{0.0, 0.0}
-			dock_node_flags_val := imgui.DockNodeFlags{.PassthruCentralNode}
-			imgui.DockSpace(dockspace_id_val, dock_size_val, dock_node_flags_val)
-
-			// Call the main editor rendering function
-			if editor.initialized {
-				editor_render() // This renders the individual panels, including the "Viewport" UI
+				// Draw based on model type
+				switch renderer.model_type {
+				case .CUBE:
+					raylib.DrawCube(transform.position, 1.0, 1.0, 1.0, raylib.WHITE)
+				case .SPHERE:
+					raylib.DrawSphere(transform.position, 0.5, raylib.WHITE)
+				case .PLANE:
+					raylib.DrawPlane(transform.position, {1.0, 1.0}, raylib.WHITE)
+				case .AMBULANCE, .CUSTOM:
+					if model, ok := asset_manager.models[renderer.mesh_path]; ok {
+						raylib.DrawModel(model.model, transform.position, 1.0, raylib.WHITE)
+					}
+				}
 			}
 		}
-		imgui.End() // End DockSpace Host window
-		imgui.PopStyleColor(1) // Pop the WindowBg color for DockSpace Host
-
-		// Draw the 3D scene
-		// This happens AFTER the ImGui windows are defined, but BEFORE ImGui actually renders its draw data.
-		// So, if the ImGui windows above are transparent, this 3D scene should show through.
-		if editor.viewport_open &&
-		   viewport_state.rect_width > 0 &&
-		   viewport_state.rect_height > 0 {
-			editor_viewport_draw_3d_scene(
-				viewport_state.rect_x,
-				viewport_state.rect_y,
-				viewport_state.rect_width,
-				viewport_state.rect_height,
-			)
-		}
-
-		// ImGui rendering is finalized here (draws all ImGui elements to the screen)
-		imgui_end_frame()
 	}
+
+	// End 3D mode
+	raylib.EndMode3D()
+
+	// Render editor UI if in editor mode
+	if !engine.playing && engine.editor_visible {
+		editor_render()
+	}
+
+	// End ImGui frame
+	imgui_end_frame()
+
+	// End rendering
 	raylib.EndDrawing()
 }
 
