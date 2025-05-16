@@ -98,11 +98,8 @@ draw_3d_scene :: proc(x, y, width, height: i32) {
 
 	// Draw all entities with renderers
 	for entity in scene_manager.current_scene.entities {
-		if renderer := ecs_get_component(entity, .RENDERER); renderer != nil {
-			if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
-				transform := cast(^Transform_Component)transform
-				renderer := cast(^Renderer)renderer
-
+		if renderer := ecs_get_component(entity, Renderer); renderer != nil {
+			if transform := ecs_get_component(entity, Transform); transform != nil {
 				// Draw based on model type
 				switch renderer.model_type {
 				case .CUBE:
@@ -194,9 +191,7 @@ editor_render :: proc() {
 	if imgui.Begin("Scene Tree", nil, window_flags) {
 		// Render scene tree
 		for entity in scene_manager.current_scene.entities {
-			if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
-				transform := cast(^Transform_Component)transform
-
+			if transform := ecs_get_component(entity, Transform); transform != nil {
 				// Create a selectable tree node for each entity
 				entity_name := fmt.tprintf("Entity %d", entity)
 				if imgui.Selectable(

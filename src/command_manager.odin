@@ -27,6 +27,12 @@ Command_Manager :: struct {
 // Global command manager instance
 command_manager: Command_Manager
 
+// VTable references for different command types
+entity_add_vtable: Command_VTable
+entity_delete_vtable: Command_VTable
+entity_rename_vtable: Command_VTable
+create_entity_vtable: Command_VTable
+
 // Initialize the command manager
 command_manager_init :: proc(max_stack_size: int = 100) {
 	command_manager = Command_Manager {

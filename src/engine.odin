@@ -169,19 +169,16 @@ engine_init :: proc(config: Engine_Config) -> bool {
 		return false
 	}
 
-	// Initialize entity manager
-	entity_manager_init()
+	// Initialize the entity component system
+	ecs_init()
 
-	// Initialize command manager
+	// Initialize the command manager
 	command_manager_init()
 
-	// Initialize component system
-	component_system_init()
-
-	// Initialize asset manager
+	// Initialize the asset manager
 	asset_manager_init()
 
-	// Initialize scene manager
+	// Initialize the scene manager
 	scene_manager_init()
 
 	// Create a new empty scene
@@ -230,13 +227,10 @@ engine_shutdown :: proc() {
 	log_info(.ENGINE, "Shutting down engine")
 
 	// Shutdown entity manager
-	entity_manager_shutdown()
+	ecs_destroy()
 
 	// Shutdown command manager
 	command_manager_shutdown()
-
-	// Shutdown component system
-	component_system_shutdown()
 
 	// Shutdown asset manager
 	asset_manager_shutdown()
@@ -369,11 +363,8 @@ engine_render :: proc() {
 
 	// Render game objects
 	for entity in scene_manager.current_scene.entities {
-		if renderer := ecs_get_component(entity, .RENDERER); renderer != nil {
-			if transform := ecs_get_component(entity, .TRANSFORM); transform != nil {
-				transform := cast(^Transform_Component)transform
-				renderer := cast(^Renderer)renderer
-
+		if renderer := ecs_get_component(entity, Renderer); renderer != nil {
+			if transform := ecs_get_component(entity, Transform); transform != nil {
 				// Draw based on model type
 				switch renderer.model_type {
 				case .CUBE:

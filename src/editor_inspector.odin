@@ -62,12 +62,14 @@ editor_inspector_render :: proc() {
 
 	if imgui.BeginPopup("CreateEntityPopup") {
 		if imgui.MenuItem("Empty") {
-			entity := ecs_create_entity("Empty")
+			entity := ecs_create_entity()
+			ecs_set_entity_name(entity, "Empty")
 			editor.selected_entity = entity
 		}
 		if imgui.BeginMenu("3D Object") {
 			if imgui.MenuItem("Cube") {
-				entity := ecs_create_entity("Cube")
+				entity := ecs_create_entity()
+				ecs_set_entity_name(entity, "Cube")
 				transform := ecs_add_transform(entity)
 				renderer := ecs_add_renderer(entity)
 				if transform != nil && renderer != nil {
@@ -78,7 +80,8 @@ editor_inspector_render :: proc() {
 				editor.selected_entity = entity
 			}
 			if imgui.MenuItem("Ambulance") {
-				entity := ecs_create_entity("Ambulance")
+				entity := ecs_create_entity()
+				ecs_set_entity_name(entity, "Ambulance")
 				transform := ecs_add_transform(entity)
 				renderer := ecs_add_renderer(entity)
 				if transform != nil && renderer != nil {
@@ -92,7 +95,8 @@ editor_inspector_render :: proc() {
 		}
 		if imgui.BeginMenu("Light") {
 			if imgui.MenuItem("Directional Light") {
-				entity := ecs_create_entity("Directional Light")
+				entity := ecs_create_entity()
+				ecs_set_entity_name(entity, "Directional Light")
 				transform := ecs_add_transform(entity)
 				light := ecs_add_light(entity, .DIRECTIONAL)
 				if transform != nil && light != nil {
@@ -100,7 +104,8 @@ editor_inspector_render :: proc() {
 				}
 			}
 			if imgui.MenuItem("Point Light") {
-				entity := ecs_create_entity("Point Light")
+				entity := ecs_create_entity()
+				ecs_set_entity_name(entity, "Point Light")
 				transform := ecs_add_transform(entity)
 				light := ecs_add_light(entity, .POINT)
 				if transform != nil && light != nil {
@@ -108,7 +113,8 @@ editor_inspector_render :: proc() {
 				}
 			}
 			if imgui.MenuItem("Spot Light") {
-				entity := ecs_create_entity("Spot Light")
+				entity := ecs_create_entity()
+				ecs_set_entity_name(entity, "Spot Light")
 				transform := ecs_add_transform(entity)
 				light := ecs_add_light(entity, .SPOT)
 				if transform != nil && light != nil {
@@ -118,7 +124,8 @@ editor_inspector_render :: proc() {
 			imgui.EndMenu()
 		}
 		if imgui.MenuItem("Camera") {
-			entity := ecs_create_entity("Camera")
+			entity := ecs_create_entity()
+			ecs_set_entity_name(entity, "Camera")
 			transform := ecs_add_transform(entity)
 			camera := ecs_add_camera(entity, 45.0, 0.1, 1000.0, true)
 			if transform != nil && camera != nil {
@@ -191,23 +198,23 @@ editor_inspector_render :: proc() {
 	}
 
 	// Component inspectors
-	if transform := ecs_get_component(editor.selected_entity, .TRANSFORM); transform != nil {
-		transform_render_inspector(cast(^Transform_Component)transform)
+	if transform := ecs_get_component(editor.selected_entity, Transform); transform != nil {
+		transform_render_inspector(cast(^Transform)transform)
 	}
 
-	if renderer := ecs_get_component(editor.selected_entity, .RENDERER); renderer != nil {
+	if renderer := ecs_get_component(editor.selected_entity, Renderer); renderer != nil {
 		renderer_render_inspector(cast(^Renderer)renderer)
 	}
 
-	if camera := ecs_get_component(editor.selected_entity, .CAMERA); camera != nil {
+	if camera := ecs_get_component(editor.selected_entity, Camera); camera != nil {
 		camera_render_inspector(cast(^Camera)camera)
 	}
 
-	if light := ecs_get_component(editor.selected_entity, .LIGHT); light != nil {
+	if light := ecs_get_component(editor.selected_entity, Light); light != nil {
 		light_render_inspector(cast(^Light)light)
 	}
 
-	if script := ecs_get_component(editor.selected_entity, .SCRIPT); script != nil {
+	if script := ecs_get_component(editor.selected_entity, Script); script != nil {
 		script_render_inspector(cast(^Script)script)
 	}
 
@@ -217,33 +224,24 @@ editor_inspector_render :: proc() {
 	}
 
 	if imgui.BeginPopup("AddComponent") {
-		if !ecs_has_component(editor.selected_entity, .RENDERER) {
+		if !ecs_has_component(editor.selected_entity, Renderer) {
 			if imgui.MenuItem("Renderer") {
-				if renderer := create_component(.RENDERER, editor.selected_entity);
-				   renderer != nil {
-					ecs_add_component(editor.selected_entity, renderer)
-				}
+				_ = ecs_add_renderer(editor.selected_entity)
 			}
 		}
-		if !ecs_has_component(editor.selected_entity, .CAMERA) {
+		if !ecs_has_component(editor.selected_entity, Camera) {
 			if imgui.MenuItem("Camera") {
-				if camera := create_component(.CAMERA, editor.selected_entity); camera != nil {
-					ecs_add_component(editor.selected_entity, camera)
-				}
+				_ = ecs_add_camera(editor.selected_entity)
 			}
 		}
-		if !ecs_has_component(editor.selected_entity, .LIGHT) {
+		if !ecs_has_component(editor.selected_entity, Light) {
 			if imgui.MenuItem("Light") {
-				if light := create_component(.LIGHT, editor.selected_entity); light != nil {
-					ecs_add_component(editor.selected_entity, light)
-				}
+				_ = ecs_add_light(editor.selected_entity)
 			}
 		}
-		if !ecs_has_component(editor.selected_entity, .SCRIPT) {
+		if !ecs_has_component(editor.selected_entity, Script) {
 			if imgui.MenuItem("Script") {
-				if script := create_component(.SCRIPT, editor.selected_entity); script != nil {
-					ecs_add_component(editor.selected_entity, script)
-				}
+				_ = ecs_add_script(editor.selected_entity)
 			}
 		}
 		imgui.EndPopup()

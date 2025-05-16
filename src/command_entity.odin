@@ -1,412 +1,258 @@
 package main
 
+import "core:fmt"
 import "core:log"
 import "core:mem"
 import "core:strings"
+import raylib "vendor:raylib"
 
-// Entity command data structures
-Command_Entity_Add :: struct {
-	entity_id: Entity,
-	name:      string,
-}
-
-Command_Entity_Delete :: struct {
-	entity_id:  Entity,
+// Command to create an entity
+Command_Create_Entity :: struct {
+	entity:     Entity,
 	name:       string,
-	components: map[Component_Type]rawptr,
+	parent:     Entity,
+	components: map[Component_Type]bool,
 }
 
+// Command to destroy an entity
+Command_Destroy_Entity :: struct {
+	entity:     Entity,
+	name:       string,
+	parent:     Entity,
+	components: map[Component_Type]bool,
+}
+
+// Command to rename an entity
 Command_Entity_Rename :: struct {
 	entity_id: Entity,
 	old_name:  string,
 	new_name:  string,
 }
 
-// Create entity command
-Command_Create_Entity :: struct {
-	using command: Command,
-	entity_id:     Entity,
-	name:          string,
-	components:    map[Component_Type]^Component,
-}
-
-// Entity command vtable implementations
-entity_add_vtable := Command_VTable {
-	execute = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Add)cmd.data
-		if data == nil do return
-
-		// Create the entity
-		data.entity_id = scene_manager_create_entity(data.name)
-	},
-	undo = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Add)cmd.data
-		if data == nil do return
-
-		// Delete the entity
-		scene_manager_delete_entity(data.entity_id)
-	},
-	redo = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Add)cmd.data
-		if data == nil do return
-
-		// Recreate the entity
-		data.entity_id = scene_manager_create_entity(data.name)
-	},
-	destroy = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Add)cmd.data
-		if data == nil do return
-
-		delete(data.name)
-		free(data)
-	},
-	copy = proc(cmd: ^Command) -> Command {
-		data := cast(^Command_Entity_Add)cmd.data
-		if data == nil do return Command{}
-
-		new_data := new(Command_Entity_Add)
-		new_data^ = data^
-		new_data.name = strings.clone(data.name)
-
-		return Command{vtable = cmd.vtable, data = new_data}
-	},
-}
-
-entity_delete_vtable := Command_VTable {
-	execute = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Delete)cmd.data
-		if data == nil do return
-
-		// Store entity data before deletion
-		data.name = ecs_get_entity_name(data.entity_id)
-		data.components = make(map[Component_Type]rawptr)
-
-		// Store component data
-		if transform := ecs_get_component(data.entity_id, .TRANSFORM); transform != nil {
-			ptr, err := mem.alloc(size_of(Transform_Component))
-			if err == nil {
-				mem.copy(ptr, cast(^Transform_Component)transform, size_of(Transform_Component))
-				data.components[.TRANSFORM] = ptr
-			}
-		}
-		if renderer := ecs_get_component(data.entity_id, .RENDERER); renderer != nil {
-			ptr, err := mem.alloc(size_of(Renderer))
-			if err == nil {
-				mem.copy(ptr, cast(^Renderer)renderer, size_of(Renderer))
-				data.components[.RENDERER] = ptr
-			}
-		}
-		if light := ecs_get_component(data.entity_id, .LIGHT); light != nil {
-			ptr, err := mem.alloc(size_of(Light))
-			if err == nil {
-				mem.copy(ptr, cast(^Light)light, size_of(Light))
-				data.components[.LIGHT] = ptr
-			}
-		}
-		if camera := ecs_get_component(data.entity_id, .CAMERA); camera != nil {
-			ptr, err := mem.alloc(size_of(Camera))
-			if err == nil {
-				mem.copy(ptr, cast(^Camera)camera, size_of(Camera))
-				data.components[.CAMERA] = ptr
-			}
-		}
-
-		// Delete the entity
-		scene_manager_delete_entity(data.entity_id)
-	},
-	undo = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Delete)cmd.data
-		if data == nil do return
-
-		// Recreate the entity
-		data.entity_id = scene_manager_create_entity(data.name)
-
-		// Restore components
-		if transform := cast(^Transform_Component)data.components[.TRANSFORM]; transform != nil {
-			new_transform := ecs_add_transform(data.entity_id)
-			if new_transform != nil {
-				new_transform^ = transform^
-			}
-		}
-		if renderer := cast(^Renderer)data.components[.RENDERER]; renderer != nil {
-			new_renderer := ecs_add_renderer(data.entity_id)
-			if new_renderer != nil {
-				new_renderer^ = renderer^
-				new_renderer.mesh_path = renderer.mesh_path
-				new_renderer.material_path = renderer.material_path
-			}
-		}
-		if light := cast(^Light)data.components[.LIGHT]; light != nil {
-			new_light := ecs_add_light(
-				data.entity_id,
-				light.light_type,
-				light.color,
-				light.intensity,
-				light.range,
-				light.spot_angle,
-			)
-			if new_light != nil {
-				new_light^ = light^
-			}
-		}
-		if camera := cast(^Camera)data.components[.CAMERA]; camera != nil {
-			new_camera := ecs_add_camera(
-				data.entity_id,
-				camera.fov,
-				camera.near,
-				camera.far,
-				camera.is_main,
-			)
-			if new_camera != nil {
-				new_camera^ = camera^
-			}
-		}
-	},
-	redo = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Delete)cmd.data
-		if data == nil do return
-
-		// Delete the entity
-		scene_manager_delete_entity(data.entity_id)
-	},
-	destroy = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Delete)cmd.data
-		if data == nil do return
-
-		delete(data.name)
-		for _, component in data.components {
-			free(component)
-		}
-		delete(data.components)
-		free(data)
-	},
-	copy = proc(cmd: ^Command) -> Command {
-		data := cast(^Command_Entity_Delete)cmd.data
-		if data == nil do return Command{}
-
-		new_data := new(Command_Entity_Delete)
-		new_data^ = data^
-		new_data.name = strings.clone(data.name)
-		new_data.components = make(map[Component_Type]rawptr)
-
-		// Deep copy components
-		for type, component in data.components {
-			size: int
-			if type == .TRANSFORM {
-				size = size_of(Transform_Component)
-			} else if type == .RENDERER {
-				size = size_of(Renderer)
-			} else if type == .LIGHT {
-				size = size_of(Light)
-			} else if type == .CAMERA {
-				size = size_of(Camera)
-			} else {
-				size = 0
-			}
-			if size > 0 {
-				ptr, err := mem.alloc(size)
-				if err == nil {
-					mem.copy(ptr, component, size)
-					new_data.components[type] = ptr
-				}
-			}
-		}
-
-		return Command{vtable = cmd.vtable, data = new_data}
-	},
-}
-
-entity_rename_vtable := Command_VTable {
-	execute = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Rename)cmd.data
-		if data == nil do return
-
-		// Store old name
-		data.old_name = ecs_get_entity_name(data.entity_id)
-
-		// Set new name
-		ecs_set_entity_name(data.entity_id, data.new_name)
-	},
-	undo = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Rename)cmd.data
-		if data == nil do return
-
-		// Restore old name
-		ecs_set_entity_name(data.entity_id, data.old_name)
-	},
-	redo = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Rename)cmd.data
-		if data == nil do return
-
-		// Set new name
-		ecs_set_entity_name(data.entity_id, data.new_name)
-	},
-	destroy = proc(cmd: ^Command) {
-		data := cast(^Command_Entity_Rename)cmd.data
-		if data == nil do return
-
-		delete(data.old_name)
-		delete(data.new_name)
-		free(data)
-	},
-	copy = proc(cmd: ^Command) -> Command {
-		data := cast(^Command_Entity_Rename)cmd.data
-		if data == nil do return Command{}
-
-		new_data := new(Command_Entity_Rename)
-		new_data^ = data^
-		new_data.old_name = strings.clone(data.old_name)
-		new_data.new_name = strings.clone(data.new_name)
-
-		return Command{vtable = cmd.vtable, data = new_data}
-	},
-}
-
-// Command creation functions
-command_create_entity_add :: proc(name: string, parent: Entity = 0) -> Command {
-	data := new(Command_Entity_Add)
-	data.name = strings.clone(name)
-	data.entity_id = 0
-
-	return Command{vtable = &entity_add_vtable, data = data}
-}
-
-command_create_entity_delete :: proc(entity_id: Entity) -> Command {
-	data := new(Command_Entity_Delete)
-	data.entity_id = entity_id
-	data.name = ""
-	data.components = make(map[Component_Type]rawptr)
-
-	return Command{vtable = &entity_delete_vtable, data = data}
-}
-
-command_create_entity_rename :: proc(entity_id: Entity, new_name: string) -> Command {
-	data := new(Command_Entity_Rename)
-	data.entity_id = entity_id
-	data.old_name = ""
-	data.new_name = strings.clone(new_name)
-
-	return Command{vtable = &entity_rename_vtable, data = data}
-}
-
-// Create entity command vtable
-create_entity_vtable: Command_VTable
-
-init_create_entity_vtable :: proc() {
-	create_entity_vtable = Command_VTable {
-		execute = proc(cmd: ^Command) {
-			data := cast(^Command_Create_Entity)cmd.data
-			if data == nil do return
-
-			// Create the entity
-			data.entity_id = ecs_create_entity(data.name)
-			if data.entity_id == 0 do return
-
-			// Add components
-			if transform, ok := entity_manager.transforms[data.entity_id]; ok {
-				component := new(Transform_Component)
-				component^ = transform
-				data.components[.TRANSFORM] = cast(^Component)component
-			}
-			if renderer, ok := entity_manager.renderers[data.entity_id]; ok {
-				component := new(Renderer)
-				component^ = renderer
-				data.components[.RENDERER] = cast(^Component)component
-			}
-			if light, ok := entity_manager.lights[data.entity_id]; ok {
-				component := new(Light)
-				component^ = light
-				data.components[.LIGHT] = cast(^Component)component
-			}
-			if camera, ok := entity_manager.cameras[data.entity_id]; ok {
-				component := new(Camera)
-				component^ = camera
-				data.components[.CAMERA] = cast(^Component)component
-			}
-		},
-		undo = proc(cmd: ^Command) {
-			data := cast(^Command_Create_Entity)cmd.data
-			if data == nil do return
-
-			// Destroy the entity
-			ecs_destroy_entity(data.entity_id)
-		},
-		redo = proc(cmd: ^Command) {
-			data := cast(^Command_Create_Entity)cmd.data
-			if data == nil do return
-
-			// Create the entity
-			data.entity_id = ecs_create_entity(data.name)
-			if data.entity_id == 0 do return
-
-			// Add components
-			if transform, ok := entity_manager.transforms[data.entity_id]; ok {
-				component := new(Transform_Component)
-				component^ = transform
-				data.components[.TRANSFORM] = cast(^Component)component
-			}
-			if renderer, ok := entity_manager.renderers[data.entity_id]; ok {
-				component := new(Renderer)
-				component^ = renderer
-				data.components[.RENDERER] = cast(^Component)component
-			}
-			if light, ok := entity_manager.lights[data.entity_id]; ok {
-				component := new(Light)
-				component^ = light
-				data.components[.LIGHT] = cast(^Component)component
-			}
-			if camera, ok := entity_manager.cameras[data.entity_id]; ok {
-				component := new(Camera)
-				component^ = camera
-				data.components[.CAMERA] = cast(^Component)component
-			}
-		},
-		destroy = proc(cmd: ^Command) {
-			data := cast(^Command_Create_Entity)cmd.data
-			if data == nil do return
-
-			// Clean up component data
-			for _, component in data.components {
-				if component != nil {
-					free(component)
-				}
-			}
-			clear(&data.components)
-			free(data)
-		},
-		copy = proc(cmd: ^Command) -> Command {
-			data := cast(^Command_Create_Entity)cmd.data
-			if data == nil do return Command{}
-
-			new_data := new(Command_Create_Entity)
-			new_data^ = data^
-
-			// Deep copy components
-			new_data.components = make(map[Component_Type]^Component)
-			for type, component in data.components {
-				if component != nil {
-					new_data.components[type] = component
-				}
-			}
-
-			return Command{vtable = &create_entity_vtable, data = new_data}
-		},
-	}
-}
-
-// Create entity command
-create_entity_command :: proc(name: string) -> ^Command {
-	data := new(Command_Create_Entity)
-	data^ = Command_Create_Entity {
-		entity_id  = 0,
+// Create a new create entity command
+create_entity_command_create :: proc(
+	name: string = "",
+	parent: Entity = 0,
+) -> ^Command_Create_Entity {
+	command := new(Command_Create_Entity)
+	command^ = Command_Create_Entity {
+		entity     = ecs_create_entity(),
 		name       = name,
-		components = make(map[Component_Type]^Component),
+		parent     = parent,
+		components = make(map[Component_Type]bool),
+	}
+	return command
+}
+
+// Create a new destroy entity command
+destroy_entity_command_create :: proc(entity: Entity) -> ^Command_Destroy_Entity {
+	command := new(Command_Destroy_Entity)
+	command^ = Command_Destroy_Entity {
+		entity     = entity,
+		name       = ecs_get_entity_name(entity),
+		parent     = ecs_get_parent(entity),
+		components = make(map[Component_Type]bool),
 	}
 
-	cmd := new(Command)
-	cmd^ = Command {
-		vtable = &create_entity_vtable,
-		data   = data,
+	// Store which components the entity has
+	if ecs_has_component(entity, Transform) {
+		command.components[.TRANSFORM] = true
 	}
-	return cmd
+	if ecs_has_component(entity, Renderer) {
+		command.components[.RENDERER] = true
+	}
+	if ecs_has_component(entity, Camera) {
+		command.components[.CAMERA] = true
+	}
+	if ecs_has_component(entity, Light) {
+		command.components[.LIGHT] = true
+	}
+	if ecs_has_component(entity, Script) {
+		command.components[.SCRIPT] = true
+	}
+
+	return command
+}
+
+// Create a new rename entity command
+create_entity_rename_command :: proc(entity: Entity, new_name: string) -> ^Command_Entity_Rename {
+	command := new(Command_Entity_Rename)
+	command^ = Command_Entity_Rename {
+		entity_id = entity,
+		old_name  = ecs_get_entity_name(entity),
+		new_name  = new_name,
+	}
+	return command
+}
+
+// Execute the create entity command
+execute_create_entity_command :: proc(command: ^Command_Create_Entity) {
+	if command == nil do return
+
+	// Set entity name if provided
+	if command.name != "" {
+		ecs_set_entity_name(command.entity, command.name)
+	}
+
+	// Set parent if provided
+	if command.parent != 0 {
+		ecs_set_parent(command.entity, command.parent)
+	}
+
+	// Add components
+	if command.components[.TRANSFORM] {
+		transform := Transform {
+			position     = {0, 0, 0},
+			rotation     = {0, 0, 0},
+			scale        = {1, 1, 1},
+			local_matrix = raylib.Matrix(1),
+			world_matrix = raylib.Matrix(1),
+			dirty        = true,
+		}
+		ecs_add_component(command.entity, Transform, transform)
+	}
+	if command.components[.RENDERER] {
+		renderer := Renderer {
+			visible       = true,
+			model_type    = .CUBE,
+			mesh_path     = "cube",
+			material_path = "default",
+		}
+		ecs_add_component(command.entity, Renderer, renderer)
+	}
+	if command.components[.CAMERA] {
+		camera := Camera {
+			fov     = 60,
+			near    = 0.1,
+			far     = 1000,
+			is_main = false,
+		}
+		ecs_add_component(command.entity, Camera, camera)
+	}
+	if command.components[.LIGHT] {
+		light := Light {
+			light_type = .POINT,
+			color      = {1, 1, 1},
+			intensity  = 1,
+			range      = 10,
+			spot_angle = 45,
+		}
+		ecs_add_component(command.entity, Light, light)
+	}
+	if command.components[.SCRIPT] {
+		script := Script {
+			script_name = "",
+		}
+		ecs_add_component(command.entity, Script, script)
+	}
+}
+
+// Execute the destroy entity command
+execute_destroy_entity_command :: proc(command: ^Command_Destroy_Entity) {
+	if command == nil do return
+	ecs_destroy_entity(command.entity)
+}
+
+// Execute the rename entity command
+execute_entity_rename_command :: proc(command: ^Command_Entity_Rename) {
+	if command == nil do return
+	command.old_name = ecs_get_entity_name(command.entity_id)
+	ecs_set_entity_name(command.entity_id, command.new_name)
+}
+
+// Undo the create entity command
+undo_create_entity_command :: proc(command: ^Command_Create_Entity) {
+	if command == nil do return
+	ecs_destroy_entity(command.entity)
+}
+
+// Undo the destroy entity command
+undo_destroy_entity_command :: proc(command: ^Command_Destroy_Entity) {
+	if command == nil do return
+
+	// Recreate the entity
+	entity := ecs_create_entity()
+
+	// Set entity name if provided
+	if command.name != "" {
+		ecs_set_entity_name(entity, command.name)
+	}
+
+	// Set parent if provided
+	if command.parent != 0 {
+		ecs_set_parent(entity, command.parent)
+	}
+
+	// Add components
+	if command.components[.TRANSFORM] {
+		transform := Transform {
+			position     = {0, 0, 0},
+			rotation     = {0, 0, 0},
+			scale        = {1, 1, 1},
+			local_matrix = raylib.Matrix(1),
+			world_matrix = raylib.Matrix(1),
+			dirty        = true,
+		}
+		ecs_add_component(entity, Transform, transform)
+	}
+	if command.components[.RENDERER] {
+		renderer := Renderer {
+			visible       = true,
+			model_type    = .CUBE,
+			mesh_path     = "cube",
+			material_path = "default",
+		}
+		ecs_add_component(entity, Renderer, renderer)
+	}
+	if command.components[.CAMERA] {
+		camera := Camera {
+			fov     = 60,
+			near    = 0.1,
+			far     = 1000,
+			is_main = false,
+		}
+		ecs_add_component(entity, Camera, camera)
+	}
+	if command.components[.LIGHT] {
+		light := Light {
+			light_type = .POINT,
+			color      = {1, 1, 1},
+			intensity  = 1,
+			range      = 10,
+			spot_angle = 45,
+		}
+		ecs_add_component(entity, Light, light)
+	}
+	if command.components[.SCRIPT] {
+		script := Script {
+			script_name = "",
+		}
+		ecs_add_component(entity, Script, script)
+	}
+}
+
+// Undo the rename entity command
+undo_entity_rename_command :: proc(command: ^Command_Entity_Rename) {
+	if command == nil do return
+	ecs_set_entity_name(command.entity_id, command.old_name)
+}
+
+// Free the create entity command
+free_create_entity_command :: proc(command: ^Command_Create_Entity) {
+	if command == nil do return
+	delete(command.components)
+	free(command)
+}
+
+// Free the destroy entity command
+free_destroy_entity_command :: proc(command: ^Command_Destroy_Entity) {
+	if command == nil do return
+	delete(command.components)
+	free(command)
+}
+
+// Free the rename entity command
+free_entity_rename_command :: proc(command: ^Command_Entity_Rename) {
+	if command == nil do return
+	free(command)
 }
