@@ -12,9 +12,12 @@ import raylib "vendor:raylib"
 
 // Scene Manager structure
 Scene_Manager :: struct {
-	current_scene:    Scene,
-	available_scenes: [dynamic]string,
-	initialized:      bool,
+	scenes:             [dynamic]Scene, // All loaded scenes
+	current_scene:      ^Scene, // Currently active scene
+	initialized:        bool, // Whether the scene manager is initialized
+	scene_path:         string, // Path to save scenes
+	entity_map:         map[Entity]Entity, // Map from old scene entities to new ECS entities
+	entity_map_reverse: map[Entity]Entity, // Map from ECS entities to scene entities
 }
 
 // Scene structure
@@ -75,12 +78,20 @@ scene_manager: Scene_Manager
 scene_manager_init :: proc() {
 	log_info(.ENGINE, "Initializing scene manager")
 
-	// Initialize the current scene
-	scene_manager.current_scene.name = "Untitled"
-	scene_manager.current_scene.path = ""
-	scene_manager.current_scene.entities = make([dynamic]Entity)
-	scene_manager.current_scene.loaded = false
-	scene_manager.current_scene.dirty = false
+	// Create a new current scene
+	scene_manager.scenes = make([dynamic]Scene)
+
+	// Add an initial empty scene
+	new_scene := Scene {
+		name     = "Untitled",
+		path     = "",
+		entities = make([dynamic]Entity),
+		loaded   = false,
+		dirty    = false,
+	}
+
+	append(&scene_manager.scenes, new_scene)
+	scene_manager.current_scene = &scene_manager.scenes[0]
 
 	// Create root entity
 	root_entity := ecs_create_entity()
@@ -93,9 +104,17 @@ scene_manager_init :: proc() {
 
 	append(&scene_manager.current_scene.entities, root_entity)
 
-	// Initialize the available scenes list
-	scene_manager_scan_available_scenes()
+	// Initialize entity maps
+	scene_manager.entity_map = make(map[Entity]Entity)
+	scene_manager.entity_map_reverse = make(map[Entity]Entity)
 
+	// Create scenes directory if it doesn't exist
+	scene_path := "assets/scenes"
+	if !os.exists(scene_path) {
+		os.make_directory(scene_path)
+	}
+
+	scene_manager.scene_path = scene_path
 	scene_manager.initialized = true
 	log_info(.ENGINE, "Scene manager initialized")
 }
@@ -110,29 +129,36 @@ scene_manager_shutdown :: proc() {
 	}
 
 	// Free resources
-	delete(scene_manager.current_scene.entities)
-	delete(scene_manager.available_scenes)
+	for _, i in scene_manager.scenes {
+		delete(scene_manager.scenes[i].entities)
+		delete(scene_manager.scenes[i].name)
+		delete(scene_manager.scenes[i].path)
+	}
+	delete(scene_manager.scenes)
+
+	// Free entity mappings
+	delete(scene_manager.entity_map)
+	delete(scene_manager.entity_map_reverse)
+
 	scene_manager.initialized = false
 }
 
 // Scan for available scenes in the assets/scenes directory
-scene_manager_scan_available_scenes :: proc() {
-	scenes_dir := "assets/scenes"
-
-	// Clear the available scenes list
-	clear(&scene_manager.available_scenes)
+scene_manager_scan_available_scenes :: proc() -> []string {
+	scenes_dir := scene_manager.scene_path
+	scene_files := make([dynamic]string)
 
 	// Check if the directory exists
 	if !os.exists(scenes_dir) {
 		log_warning(.ENGINE, "Scenes directory '%s' does not exist", scenes_dir)
-		return
+		return nil
 	}
 
 	// Read directory contents
 	dir, err := os.open(scenes_dir)
 	if err != os.ERROR_NONE {
 		log_error(.ENGINE, "Failed to open scenes directory: %v", err)
-		return
+		return nil
 	}
 	defer os.close(dir)
 
@@ -140,7 +166,7 @@ scene_manager_scan_available_scenes :: proc() {
 	files, read_err := os.read_dir(dir, -1)
 	if read_err != os.ERROR_NONE {
 		log_error(.ENGINE, "Failed to read scenes directory: %v", read_err)
-		return
+		return nil
 	}
 	defer os.file_info_slice_delete(files)
 
@@ -152,12 +178,13 @@ scene_manager_scan_available_scenes :: proc() {
 			if !strings.has_suffix(scene_name, ".json") {
 				scene_name = fmt.tprintf("%s.json", scene_name)
 			}
-			append(&scene_manager.available_scenes, scene_name)
+			append(&scene_files, scene_name)
 			log_debug(.ENGINE, "Found scene: %s", scene_name)
 		}
 	}
 
-	log_info(.ENGINE, "Found %d scene(s)", len(scene_manager.available_scenes))
+	log_info(.ENGINE, "Found %d scene(s)", len(scene_files))
+	return scene_files[:]
 }
 
 // Clean up the current scene
@@ -185,7 +212,7 @@ scene_manager_cleanup :: proc() {
 }
 
 // Create a new scene
-scene_manager_new :: proc(name: string) -> bool {
+scene_manager_new :: proc(name: string) -> (scene: ^Scene, ok: bool) {
 	log_info(.ENGINE, "Creating new scene: %s", name)
 
 	// Cleanup existing scene if loaded
@@ -196,14 +223,20 @@ scene_manager_new :: proc(name: string) -> bool {
 	// Reset entity manager to ensure clean entity IDs
 	registry.next_entity_id = 1
 
-	// Initialize new scene with default values
-	scene_manager.current_scene = Scene {
+	// Create new scene and add to scenes list
+	new_scene := Scene {
 		name     = strings.clone(name),
 		path     = "",
 		entities = make([dynamic]Entity),
 		loaded   = true,
 		dirty    = true,
 	}
+
+	append(&scene_manager.scenes, new_scene)
+
+	// Set as current scene
+	scene_manager.current_scene = &scene_manager.scenes[len(scene_manager.scenes) - 1]
+	scene = scene_manager.current_scene
 
 	// Create root entity
 	root_entity := ecs_create_entity()
@@ -212,7 +245,7 @@ scene_manager_new :: proc(name: string) -> bool {
 	if root_entity == 0 {
 		log_error(.ENGINE, "Failed to create root entity")
 		scene_manager_cleanup()
-		return false
+		return nil, false
 	}
 
 	append(&scene_manager.current_scene.entities, root_entity)
@@ -224,7 +257,7 @@ scene_manager_new :: proc(name: string) -> bool {
 	if camera_entity == 0 {
 		log_error(.ENGINE, "Failed to create camera entity")
 		scene_manager_cleanup()
-		return false
+		return nil, false
 	}
 
 	// Set transform values for camera
@@ -251,7 +284,7 @@ scene_manager_new :: proc(name: string) -> bool {
 	append(&scene_manager.current_scene.entities, camera_entity)
 
 	log_info(.ENGINE, "Created new scene: %s", name)
-	return true
+	return scene, true
 }
 
 // Create a new entity in the current scene
@@ -262,6 +295,17 @@ scene_manager_create_entity :: proc(name: string = "") -> Entity {
 	if name != "" {
 		ecs_set_entity_name(entity, name)
 	}
+
+	// Add a default Transform component
+	transform := Transform {
+		position     = raylib.Vector3{0, 0, 0},
+		rotation     = raylib.Vector3{0, 0, 0},
+		scale        = raylib.Vector3{1, 1, 1},
+		local_matrix = raylib.Matrix(1),
+		world_matrix = raylib.Matrix(1),
+		dirty        = true,
+	}
+	ecs_add_component(entity, Transform, transform)
 
 	// Add to current scene
 	if scene_manager.initialized && scene_manager.current_scene.loaded {

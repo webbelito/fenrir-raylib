@@ -98,8 +98,9 @@ editor_inspector_render :: proc() {
 				entity := ecs_create_entity()
 				ecs_set_entity_name(entity, "Directional Light")
 				transform := ecs_add_transform(entity)
-				light := ecs_add_light(entity, .DIRECTIONAL)
+				light := ecs_add_light(entity)
 				if transform != nil && light != nil {
+					light.light_type = .DIRECTIONAL
 					editor.selected_entity = entity
 				}
 			}
@@ -107,8 +108,10 @@ editor_inspector_render :: proc() {
 				entity := ecs_create_entity()
 				ecs_set_entity_name(entity, "Point Light")
 				transform := ecs_add_transform(entity)
-				light := ecs_add_light(entity, .POINT)
+				light := ecs_add_light(entity)
 				if transform != nil && light != nil {
+					light.light_type = .POINT
+					light.range = 10.0
 					editor.selected_entity = entity
 				}
 			}
@@ -116,8 +119,11 @@ editor_inspector_render :: proc() {
 				entity := ecs_create_entity()
 				ecs_set_entity_name(entity, "Spot Light")
 				transform := ecs_add_transform(entity)
-				light := ecs_add_light(entity, .SPOT)
+				light := ecs_add_light(entity)
 				if transform != nil && light != nil {
+					light.light_type = .SPOT
+					light.range = 10.0
+					light.spot_angle = 45.0
 					editor.selected_entity = entity
 				}
 			}
@@ -127,8 +133,12 @@ editor_inspector_render :: proc() {
 			entity := ecs_create_entity()
 			ecs_set_entity_name(entity, "Camera")
 			transform := ecs_add_transform(entity)
-			camera := ecs_add_camera(entity, 45.0, 0.1, 1000.0, true)
+			camera := ecs_add_camera(entity)
 			if transform != nil && camera != nil {
+				camera.fov = 45.0
+				camera.near = 0.1
+				camera.far = 1000.0
+				camera.is_main = true
 				editor.selected_entity = entity
 			}
 		}

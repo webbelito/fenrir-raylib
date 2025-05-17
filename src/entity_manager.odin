@@ -436,7 +436,7 @@ ecs_remove_entity_tag :: proc(entity: Entity, tag: string) {
 }
 
 // Helper functions for common component operations
-ecs_add_transform :: proc(
+entity_add_transform :: proc(
 	entity: Entity,
 	position: raylib.Vector3 = {0, 0, 0},
 	rotation: raylib.Vector3 = {0, 0, 0},
@@ -453,7 +453,7 @@ ecs_add_transform :: proc(
 	return ecs_add_component(entity, Transform, transform)
 }
 
-ecs_add_renderer :: proc(entity: Entity) -> ^Renderer {
+entity_add_renderer :: proc(entity: Entity) -> ^Renderer {
 	renderer := Renderer {
 		visible       = true,
 		model_type    = .CUBE,
@@ -463,7 +463,7 @@ ecs_add_renderer :: proc(entity: Entity) -> ^Renderer {
 	return ecs_add_component(entity, Renderer, renderer)
 }
 
-ecs_add_camera :: proc(
+entity_add_camera :: proc(
 	entity: Entity,
 	fov: f32 = 45.0,
 	near: f32 = 0.1,
@@ -479,7 +479,7 @@ ecs_add_camera :: proc(
 	return ecs_add_component(entity, Camera, camera)
 }
 
-ecs_add_light :: proc(
+entity_add_light :: proc(
 	entity: Entity,
 	light_type: Light_Type = .POINT,
 	color: raylib.Vector3 = {1, 1, 1},
@@ -497,7 +497,7 @@ ecs_add_light :: proc(
 	return ecs_add_component(entity, Light, light)
 }
 
-ecs_add_script :: proc(entity: Entity, script_name: string = "") -> ^Script {
+entity_add_script :: proc(entity: Entity, script_name: string = "") -> ^Script {
 	script := Script {
 		script_name = script_name,
 	}

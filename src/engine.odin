@@ -152,25 +152,27 @@ setup_model_materials :: proc(model: ^Model, config: ^Model_Config) {
 engine_init :: proc(config: Engine_Config) -> bool {
 	if engine.initialized {
 		log_warning(.ENGINE, "Engine already initialized")
-		return false
+		return true
 	}
 
-	log_info(.ENGINE, "Initializing engine")
+	log_info(.ENGINE, "Initializing engine...")
 
-	// Initialize ImGui first
-	if !imgui_init() {
-		log_error(.ENGINE, "Failed to initialize ImGui")
-		return false
+	// Save the config
+	engine.config = config
+
+	// Initialize cameras
+	engine.editor_camera = raylib.Camera3D {
+		position   = {10.0, 10.0, 10.0},
+		target     = {0.0, 0.0, 0.0},
+		up         = {0.0, 1.0, 0.0},
+		fovy       = 45.0,
+		projection = .PERSPECTIVE,
 	}
 
-	// Initialize editor
-	if !editor_init() {
-		log_error(.ENGINE, "Failed to initialize editor")
-		return false
-	}
+	engine.game_camera = engine.editor_camera
 
-	// Initialize the entity component system
-	ecs_init()
+	// Initialize the ECS world
+	world_init()
 
 	// Initialize the command manager
 	command_manager_init()
@@ -181,37 +183,19 @@ engine_init :: proc(config: Engine_Config) -> bool {
 	// Initialize the scene manager
 	scene_manager_init()
 
-	// Create a new empty scene
-	if !scene_manager_new("Untitled") {
-		log_error(.ENGINE, "Failed to create initial scene")
+	// Initialize the editor
+	editor_init()
+
+	// Initialize ImGui
+	if !imgui_init() {
+		log_error(.ENGINE, "Failed to initialize ImGui")
 		return false
 	}
 
-	// Initialize engine state
 	engine.initialized = true
 	engine.running = true
 	engine.playing = false
-	engine.config = config
-	engine.needs_initial_dock_layout = true // Initialize the flag
-	engine.editor_visible = true // Make sure editor is visible by default
-
-	// Initialize editor camera
-	engine.editor_camera = raylib.Camera3D {
-		position   = {0, 5, -10},
-		target     = {0, 0, 0},
-		up         = {0, 1, 0},
-		fovy       = 45,
-		projection = .PERSPECTIVE,
-	}
-
-	// Initialize game camera
-	engine.game_camera = raylib.Camera3D {
-		position   = {0, 5, -10},
-		target     = {0, 0, 0},
-		up         = {0, 1, 0},
-		fovy       = 45,
-		projection = .PERSPECTIVE,
-	}
+	engine.editor_visible = true
 
 	log_info(.ENGINE, "Engine initialized successfully")
 	return true
@@ -226,8 +210,11 @@ engine_shutdown :: proc() {
 
 	log_info(.ENGINE, "Shutting down engine")
 
-	// Shutdown entity manager
-	ecs_destroy()
+	// Shutdown ImGui
+	imgui_shutdown()
+
+	// Shutdown ECS world
+	world_destroy()
 
 	// Shutdown command manager
 	command_manager_shutdown()
@@ -334,8 +321,9 @@ engine_update :: proc() {
 
 	// Update game systems
 	if engine.playing {
-		// Update game systems
-		// TODO: Add game-specific update systems
+		// Update the ECS world
+		dt := raylib.GetFrameTime()
+		world_update(dt)
 	}
 
 	// Update editor systems
@@ -361,26 +349,11 @@ engine_render :: proc() {
 	// Draw a grid in both modes
 	raylib.DrawGrid(10, 1.0)
 
-	// Render game objects
-	for entity in scene_manager.current_scene.entities {
-		if renderer := ecs_get_component(entity, Renderer); renderer != nil {
-			if transform := ecs_get_component(entity, Transform); transform != nil {
-				// Draw based on model type
-				switch renderer.model_type {
-				case .CUBE:
-					raylib.DrawCube(transform.position, 1.0, 1.0, 1.0, raylib.WHITE)
-				case .SPHERE:
-					raylib.DrawSphere(transform.position, 0.5, raylib.WHITE)
-				case .PLANE:
-					raylib.DrawPlane(transform.position, {1.0, 1.0}, raylib.WHITE)
-				case .AMBULANCE, .CUSTOM:
-					if model, ok := asset_manager.models[renderer.mesh_path]; ok {
-						raylib.DrawModel(model.model, transform.position, 1.0, raylib.WHITE)
-					}
-				}
-			}
-		}
-	}
+	// Let the render system handle rendering
+	render_system_render(
+		&global_world.registry,
+		engine.playing ? engine.game_camera : engine.editor_camera,
+	)
 
 	// End 3D mode
 	raylib.EndMode3D()

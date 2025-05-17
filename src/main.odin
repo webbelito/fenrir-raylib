@@ -40,18 +40,11 @@ main :: proc() {
 
 	log_info(.ENGINE, "All systems initialized successfully")
 
-	// Main game loop
-	for !raylib.WindowShouldClose() {
-		// Update
-		engine_update()
-
-		// Render
-		engine_render()
-	}
+	// Run the engine's main loop
+	engine_run()
 
 	// Shutdown
 	editor_shutdown()
-	imgui_shutdown() // Shutdown ImGui after editor
 	scene_manager_shutdown()
 	time_shutdown()
 }

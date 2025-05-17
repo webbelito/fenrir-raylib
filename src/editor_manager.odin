@@ -171,7 +171,7 @@ editor_render :: proc() {
 		imgui.EndMainMenuBar()
 	}
 
-	// Create a window for the scene tree (left panel)
+	// Create a window for the world panel (left panel)
 	imgui.SetNextWindowPos(imgui.Vec2{0, imgui.GetFrameHeight()})
 	imgui.SetNextWindowSize(
 		imgui.Vec2 {
@@ -188,12 +188,24 @@ editor_render :: proc() {
 		.NoNavFocus,
 	}
 
-	if imgui.Begin("Scene Tree", nil, window_flags) {
-		// Render scene tree
+	if imgui.Begin("World", nil, window_flags) {
+		// Add Create Entity button at the top of the World panel
+		if imgui.Button("Create Entity") {
+			// Create a new entity with a default name
+			entity := scene_manager_create_entity("New Entity")
+			// Select the newly created entity
+			editor.selected_entity = entity
+			// Mark the scene as dirty
+			scene_manager.current_scene.dirty = true
+		}
+
+		imgui.Separator()
+
+		// Render world entities
 		for entity in scene_manager.current_scene.entities {
 			if transform := ecs_get_component(entity, Transform); transform != nil {
 				// Create a selectable tree node for each entity
-				entity_name := fmt.tprintf("Entity %d", entity)
+				entity_name := ecs_get_entity_name(entity)
 				if imgui.Selectable(
 					strings.clone_to_cstring(entity_name),
 					editor.selected_entity == entity,
@@ -432,7 +444,10 @@ render_open_dialog :: proc() {
 
 		// Render file list
 		if imgui.BeginChild("FileList", {-1, -40}, {.Borders}) {
-			for file in scene_manager.available_scenes {
+			scene_files := scene_manager_scan_available_scenes()
+			defer delete(scene_files)
+
+			for file in scene_files {
 				if imgui.Selectable(strings.clone_to_cstring(file), editor.selected_file == file) {
 					editor.selected_file = file
 				}
