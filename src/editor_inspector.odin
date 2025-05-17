@@ -55,112 +55,6 @@ editor_inspector_render :: proc() {
 		return
 	}
 
-	// Entity selection and creation
-	if imgui.Button("Create Entity") {
-		imgui.OpenPopup("CreateEntityPopup")
-	}
-
-	if imgui.BeginPopup("CreateEntityPopup") {
-		if imgui.MenuItem("Empty") {
-			entity := ecs_create_entity()
-			ecs_set_entity_name(entity, "Empty")
-			editor.selected_entity = entity
-		}
-		if imgui.BeginMenu("3D Object") {
-			if imgui.MenuItem("Cube") {
-				entity := ecs_create_entity()
-				ecs_set_entity_name(entity, "Cube")
-				transform := ecs_add_transform(entity)
-				renderer := ecs_add_renderer(entity)
-				if transform != nil && renderer != nil {
-					renderer.model_type = .CUBE
-					renderer.mesh_path = "cube"
-					renderer.material_path = "default"
-				}
-				editor.selected_entity = entity
-			}
-			if imgui.MenuItem("Ambulance") {
-				entity := ecs_create_entity()
-				ecs_set_entity_name(entity, "Ambulance")
-				transform := ecs_add_transform(entity)
-				renderer := ecs_add_renderer(entity)
-				if transform != nil && renderer != nil {
-					renderer.model_type = .AMBULANCE
-					renderer.mesh_path = "assets/meshes/ambulance.glb"
-					renderer.material_path = "assets/meshes/Textures/colormap.png"
-				}
-				editor.selected_entity = entity
-			}
-			imgui.EndMenu()
-		}
-		if imgui.BeginMenu("Light") {
-			if imgui.MenuItem("Directional Light") {
-				entity := ecs_create_entity()
-				ecs_set_entity_name(entity, "Directional Light")
-				transform := ecs_add_transform(entity)
-				light := ecs_add_light(entity)
-				if transform != nil && light != nil {
-					light.light_type = .DIRECTIONAL
-					editor.selected_entity = entity
-				}
-			}
-			if imgui.MenuItem("Point Light") {
-				entity := ecs_create_entity()
-				ecs_set_entity_name(entity, "Point Light")
-				transform := ecs_add_transform(entity)
-				light := ecs_add_light(entity)
-				if transform != nil && light != nil {
-					light.light_type = .POINT
-					light.range = 10.0
-					editor.selected_entity = entity
-				}
-			}
-			if imgui.MenuItem("Spot Light") {
-				entity := ecs_create_entity()
-				ecs_set_entity_name(entity, "Spot Light")
-				transform := ecs_add_transform(entity)
-				light := ecs_add_light(entity)
-				if transform != nil && light != nil {
-					light.light_type = .SPOT
-					light.range = 10.0
-					light.spot_angle = 45.0
-					editor.selected_entity = entity
-				}
-			}
-			imgui.EndMenu()
-		}
-		if imgui.MenuItem("Camera") {
-			entity := ecs_create_entity()
-			ecs_set_entity_name(entity, "Camera")
-			transform := ecs_add_transform(entity)
-			camera := ecs_add_camera(entity)
-			if transform != nil && camera != nil {
-				camera.fov = 45.0
-				camera.near = 0.1
-				camera.far = 1000.0
-				camera.is_main = true
-				editor.selected_entity = entity
-			}
-		}
-		imgui.EndPopup()
-	}
-
-	imgui.Separator()
-
-	// Entity list
-	if imgui.CollapsingHeader("Entities", {imgui.TreeNodeFlag.DefaultOpen}) {
-		for entity in scene_manager.current_scene.entities {
-			name := ecs_get_entity_name(entity)
-			label := fmt.caprintf("%s###entity_%d", name, entity)
-			defer delete(label)
-			if imgui.Selectable(label, editor.selected_entity == entity) {
-				editor.selected_entity = entity
-			}
-		}
-	}
-
-	imgui.Separator()
-
 	// Selected entity inspector
 	if editor.selected_entity == 0 {
 		imgui.Text("No entity selected")
@@ -179,7 +73,23 @@ editor_inspector_render :: proc() {
 			len(name_buf),
 			{imgui.InputTextFlag.EnterReturnsTrue},
 		) {
-			ecs_set_entity_name(editor.selected_entity, string(name_buf[:]))
+			// Convert buffer to string properly by finding the null terminator
+			name_str := ""
+			for i := 0; i < len(name_buf); i += 1 {
+				if name_buf[i] == 0 {
+					name_str = string(name_buf[:i])
+					break
+				}
+			}
+
+			// Make sure we got a valid name
+			if len(name_str) > 0 {
+				ecs_set_entity_name(editor.selected_entity, name_str)
+			} else {
+				// If empty, revert to default name based on entity ID
+				default_name := fmt.tprintf("Entity_%d", editor.selected_entity)
+				ecs_set_entity_name(editor.selected_entity, default_name)
+			}
 		}
 
 		// Active toggle

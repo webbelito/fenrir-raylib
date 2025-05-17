@@ -86,7 +86,7 @@ scene_manager_init :: proc() {
 		name     = "Untitled",
 		path     = "",
 		entities = make([dynamic]Entity),
-		loaded   = false,
+		loaded   = true,
 		dirty    = false,
 	}
 
@@ -101,6 +101,17 @@ scene_manager_init :: proc() {
 		log_error(.ENGINE, "Failed to create root entity")
 		return
 	}
+
+	// Add a default Transform component to the root entity
+	root_transform := Transform {
+		position     = raylib.Vector3{0, 0, 0},
+		rotation     = raylib.Vector3{0, 0, 0},
+		scale        = raylib.Vector3{1, 1, 1},
+		local_matrix = raylib.Matrix(1),
+		world_matrix = raylib.Matrix(1),
+		dirty        = true,
+	}
+	ecs_add_component(root_entity, Transform, root_transform)
 
 	append(&scene_manager.current_scene.entities, root_entity)
 
@@ -247,6 +258,17 @@ scene_manager_new :: proc(name: string) -> (scene: ^Scene, ok: bool) {
 		scene_manager_cleanup()
 		return nil, false
 	}
+
+	// Add a default Transform component to the root entity
+	root_transform := Transform {
+		position     = raylib.Vector3{0, 0, 0},
+		rotation     = raylib.Vector3{0, 0, 0},
+		scale        = raylib.Vector3{1, 1, 1},
+		local_matrix = raylib.Matrix(1),
+		world_matrix = raylib.Matrix(1),
+		dirty        = true,
+	}
+	ecs_add_component(root_entity, Transform, root_transform)
 
 	append(&scene_manager.current_scene.entities, root_entity)
 
@@ -404,6 +426,17 @@ scene_manager_load :: proc(path: string) -> bool {
 		scene_manager_cleanup()
 		return false
 	}
+
+	// Add a default Transform component to the root entity
+	root_transform := Transform {
+		position     = raylib.Vector3{0, 0, 0},
+		rotation     = raylib.Vector3{0, 0, 0},
+		scale        = raylib.Vector3{1, 1, 1},
+		local_matrix = raylib.Matrix(1),
+		world_matrix = raylib.Matrix(1),
+		dirty        = true,
+	}
+	ecs_add_component(root_entity, Transform, root_transform)
 
 	append(&scene_manager.current_scene.entities, root_entity)
 

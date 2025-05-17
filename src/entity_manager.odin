@@ -392,7 +392,25 @@ ecs_get_entity_name :: proc(entity: Entity) -> string {
 
 // Set entity name
 ecs_set_entity_name :: proc(entity: Entity, name: string) {
-	registry.names[entity] = name
+	// Check if the entity exists in our registry
+	if entity in registry.entities {
+		// Get the old name to free memory if needed
+		if old_name, has_name := registry.names[entity]; has_name {
+			// Don't free default names as they're generated on the fly
+			if !strings.has_prefix(old_name, "Entity_") {
+				delete(old_name)
+			}
+		}
+
+		// Check if the new name is empty
+		if len(name) == 0 {
+			// Use default name format if empty
+			registry.names[entity] = fmt.tprintf("Entity_%d", entity)
+		} else {
+			// Store a clone of the name to prevent issues with dangling pointers
+			registry.names[entity] = strings.clone(name)
+		}
+	}
 }
 
 // Get entity active state

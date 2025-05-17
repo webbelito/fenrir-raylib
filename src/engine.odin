@@ -171,6 +171,9 @@ engine_init :: proc(config: Engine_Config) -> bool {
 
 	engine.game_camera = engine.editor_camera
 
+	// Initialize the ECS registry
+	ecs_init()
+
 	// Initialize the ECS world
 	world_init()
 
@@ -224,6 +227,9 @@ engine_shutdown :: proc() {
 
 	// Shutdown scene manager
 	scene_manager_shutdown()
+
+	// Shutdown ECS registry
+	ecs_destroy()
 
 	engine.initialized = false
 	engine.running = false

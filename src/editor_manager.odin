@@ -201,16 +201,60 @@ editor_render :: proc() {
 
 		imgui.Separator()
 
-		// Render world entities
+		// Render world entities in a tree view
 		for entity in scene_manager.current_scene.entities {
 			if transform := ecs_get_component(entity, Transform); transform != nil {
-				// Create a selectable tree node for each entity
+				// Create a tree node for each entity
 				entity_name := ecs_get_entity_name(entity)
-				if imgui.Selectable(
-					strings.clone_to_cstring(entity_name),
-					editor.selected_entity == entity,
-				) {
+
+				// Safety check if name is empty
+				if len(entity_name) == 0 {
+					entity_name = fmt.tprintf("Entity_%d", entity)
+				}
+
+				// Create a cstring for the label
+				entity_label := strings.clone_to_cstring(entity_name)
+				defer delete(entity_label)
+
+				// Determine if node is selected
+				is_selected := editor.selected_entity == entity
+
+				// Use a tree node with appropriate flags
+				node_flags := imgui.TreeNodeFlags {
+					.OpenOnArrow,
+					.OpenOnDoubleClick,
+					.SpanAvailWidth,
+				}
+				if is_selected {
+					node_flags += {.Selected}
+				}
+
+				// For entities without children, make them leaf nodes
+				node_flags += {.Leaf}
+
+				// Display the tree node with entity name
+				is_open := imgui.TreeNodeEx(entity_label, node_flags)
+
+				// Handle selection when clicking on the tree node
+				if imgui.IsItemClicked() {
 					editor.selected_entity = entity
+				}
+
+				// Add context menu for entity operations
+				if imgui.BeginPopupContextItem() {
+					if imgui.MenuItem("Delete Entity") {
+						scene_manager_delete_entity(entity)
+					}
+					if imgui.MenuItem("Duplicate Entity") {
+						new_entity := scene_manager_duplicate_entity(entity)
+						editor.selected_entity = new_entity
+					}
+					imgui.EndPopup()
+				}
+
+				// End the tree node if it's open
+				if is_open {
+					imgui.TreePop()
 				}
 			}
 		}
